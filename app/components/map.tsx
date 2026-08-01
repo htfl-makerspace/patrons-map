@@ -76,7 +76,7 @@ export default function Map({ onMapReady }: MapProps) {
       // County boundaries
       map.addSource("counties", {
         type: "geojson",
-        data: "/data/counties.geojson",
+        data: `${import.meta.env.BASE_URL}data/counties.geojson`,
       })
 
       map.addLayer({
@@ -127,7 +127,7 @@ export default function Map({ onMapReady }: MapProps) {
       // Census tracts
       map.addSource("tracts", {
         type: "geojson",
-        data: "/data/tracts.geojson",
+        data: `${import.meta.env.BASE_URL}data/tracts.geojson`,
       })
 
       map.addLayer(
@@ -148,7 +148,7 @@ export default function Map({ onMapReady }: MapProps) {
       // Township boundaries
       map.addSource("townships", {
         type: "geojson",
-        data: "/data/townships.geojson",
+        data: `${import.meta.env.BASE_URL}data/townships.geojson`,
       })
 
       map.addLayer(
