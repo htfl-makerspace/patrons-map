@@ -144,6 +144,7 @@ body,
   }
 }
 
+/* Undo toast countdown bar */
 @keyframes undo-countdown-shrink {
   from {
     transform: scaleX(1);

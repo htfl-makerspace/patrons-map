@@ -1,6 +1,7 @@
 import { useRef, useEffect } from "react"
 import maplibregl from "maplibre-gl"
 import "maplibre-gl/dist/maplibre-gl.css"
+import { supabase } from "~/lib/supabase"
 
 const MAPTILER_KEY = import.meta.env.VITE_MAPTILER_API_KEY
 const STYLE_URL = `https://api.maptiler.com/maps/dataviz-v4/style.json?key=${MAPTILER_KEY}`
@@ -41,10 +42,24 @@ export default function Map({ onMapReady }: MapProps) {
 
     map.addControl(new maplibregl.NavigationControl(), "bottom-right")
 
-    map.on("load", () => {
+    map.on("load", async () => {
+      // Fetch patron data with auth token
+      const { data: { session } } = await supabase.auth.getSession()
+      const emptyCollection = { type: "FeatureCollection" as const, features: [] }
+
+      let geojsonData = emptyCollection
+      if (session) {
+        const res = await fetch(PATRONS_GEOJSON_URL, {
+          headers: { Authorization: `Bearer ${session.access_token}` },
+        })
+        if (res.ok) {
+          geojsonData = await res.json()
+        }
+      }
+
       map.addSource("patrons", {
         type: "geojson",
-        data: PATRONS_GEOJSON_URL,
+        data: geojsonData,
       })
 
       map.addLayer({

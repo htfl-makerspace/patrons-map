@@ -9,6 +9,7 @@
   },
   "dependencies": {
     "@fontsource-variable/inter": "^5.2.5",
+    "@supabase/supabase-js": "^2.111.0",
     "@tanstack/react-router": "^1.120.7",
     "class-variance-authority": "^0.7.1",
     "clsx": "^2.1.1",

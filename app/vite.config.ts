@@ -5,6 +5,7 @@ import { TanStackRouterVite } from "@tanstack/router-vite-plugin";
 import path from "path";
 
 export default defineConfig({
+  base: "/patrons-map/",
   plugins: [
     react(),
     tailwindcss(),
