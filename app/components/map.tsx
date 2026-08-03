@@ -1,4 +1,4 @@
-import { useRef, useEffect } from "react"
+import { useRef, useEffect, useState } from "react"
 import maplibregl from "maplibre-gl"
 import "maplibre-gl/dist/maplibre-gl.css"
 import { supabase } from "~/lib/supabase"
@@ -29,6 +29,8 @@ interface MapProps {
 export default function Map({ onMapReady }: MapProps) {
   const containerRef = useRef<HTMLDivElement>(null)
   const mapRef = useRef<maplibregl.Map | null>(null)
+  const [loading, setLoading] = useState(true)
+  const [loadingStatus, setLoadingStatus] = useState("Loading map…")
 
   useEffect(() => {
     if (!containerRef.current || mapRef.current) return
@@ -43,6 +45,7 @@ export default function Map({ onMapReady }: MapProps) {
     map.addControl(new maplibregl.NavigationControl(), "bottom-right")
 
     map.on("load", async () => {
+      setLoadingStatus("Loading patron data…")
       // Fetch patron data with auth token
       const { data: { session } } = await supabase.auth.getSession()
       const emptyCollection = { type: "FeatureCollection" as const, features: [] }
@@ -72,6 +75,8 @@ export default function Map({ onMapReady }: MapProps) {
           "circle-opacity": 0.6,
         },
       })
+
+      setLoadingStatus("Loading boundaries…")
 
       // County boundaries
       map.addSource("counties", {
@@ -198,6 +203,7 @@ export default function Map({ onMapReady }: MapProps) {
         minzoom: 11,
       })
 
+      setLoading(false)
     })
 
     // HTFL marker with integrated label
@@ -224,5 +230,17 @@ export default function Map({ onMapReady }: MapProps) {
     }
   }, [])
 
-  return <div ref={containerRef} className="w-full h-full" />
+  return (
+    <div className="relative w-full h-full">
+      <div ref={containerRef} className="w-full h-full" />
+      {loading && (
+        <div className="absolute inset-0 z-10 flex items-center justify-center bg-white/80 backdrop-blur-sm">
+          <div className="flex flex-col items-center gap-3">
+            <div className="h-8 w-8 animate-spin rounded-full border-4 border-gray-300 border-t-gray-700" />
+            <p className="text-sm text-gray-600">{loadingStatus}</p>
+          </div>
+        </div>
+      )}
+    </div>
+  )
 }
