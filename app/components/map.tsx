@@ -4,8 +4,7 @@ import "maplibre-gl/dist/maplibre-gl.css"
 import { supabase } from "~/lib/supabase"
 
 const MAPTILER_KEY = import.meta.env.VITE_MAPTILER_API_KEY
-const STYLE_URL = `https://api.maptiler.com/maps/dataviz-v4/style.json?key=${MAPTILER_KEY}`
-
+const STYLE_URL = `https://api.maptiler.com/maps/019fd78b-3953-7f1b-b928-526772f25070/style.json?key=${MAPTILER_KEY}`
 const PATRONS_GEOJSON_URL =
   "https://nyucgaypvzmfqbfnufxc.supabase.co/functions/v1/patrons-geojson"
 
@@ -47,16 +46,23 @@ export default function Map({ onMapReady }: MapProps) {
     map.on("load", async () => {
       setLoadingStatus("Loading patron data…")
       // Fetch patron data with auth token
-      const { data: { session } } = await supabase.auth.getSession()
-      const emptyCollection = { type: "FeatureCollection" as const, features: [] }
+      const {
+        data: { session },
+      } = await supabase.auth.getSession()
+      const emptyCollection = {
+        type: "FeatureCollection" as const,
+        features: [],
+      }
 
       let geojsonData = emptyCollection
       if (session) {
         const res = await fetch(PATRONS_GEOJSON_URL, {
           headers: { Authorization: `Bearer ${session.access_token}` },
+          cache: "no-store",
         })
         if (res.ok) {
           geojsonData = await res.json()
+          console.log(geojsonData)
         }
       }
 
@@ -74,6 +80,34 @@ export default function Map({ onMapReady }: MapProps) {
           "circle-color": COLORS.dots,
           "circle-opacity": 0.6,
         },
+      })
+
+      // Popup on click for patron dots
+      const popup = new maplibregl.Popup({
+        closeButton: false,
+        closeOnClick: true,
+      })
+
+      map.on("click", "patron-dots", (e) => {
+        if (!e.features?.length) return
+        const feature = e.features[0]
+        console.log("e.features[0]", e.features[0])
+        const coords = (
+          feature.geometry as GeoJSON.Point
+        ).coordinates.slice() as [number, number]
+        const address = feature.properties?.address ?? "Unknown address"
+
+        popup
+          .setLngLat(coords)
+          .setHTML(`<div style="font-size:13px">${address}</div>`)
+          .addTo(map)
+      })
+
+      map.on("mouseenter", "patron-dots", () => {
+        map.getCanvas().style.cursor = "pointer"
+      })
+      map.on("mouseleave", "patron-dots", () => {
+        map.getCanvas().style.cursor = ""
       })
 
       setLoadingStatus("Loading boundaries…")
@@ -112,22 +146,22 @@ export default function Map({ onMapReady }: MapProps) {
         },
       })
 
-      map.addLayer({
-        id: "county-labels",
-        type: "symbol",
-        source: "county-label-point",
-        maxzoom: 11.5,
-        layout: {
-          "text-field": ["get", "NAME"],
-          "text-size": 14,
-          "text-font": ["Open Sans Bold"],
-        },
-        paint: {
-          "text-color": COLORS.county,
-          "text-halo-color": "#ffffff",
-          "text-halo-width": 2,
-        },
-      })
+      // map.addLayer({
+      //   id: "county-labels",
+      //   type: "symbol",
+      //   source: "county-label-point",
+      //   maxzoom: 11.5,
+      //   layout: {
+      //     "text-field": ["get", "NAME"],
+      //     "text-size": 14,
+      //     "text-font": ["Open Sans Bold"],
+      //   },
+      //   paint: {
+      //     "text-color": COLORS.county,
+      //     "text-halo-color": "#ffffff",
+      //     "text-halo-width": 2,
+      //   },
+      // })
 
       // Census tracts
       map.addSource("tracts", {
@@ -185,23 +219,23 @@ export default function Map({ onMapReady }: MapProps) {
         },
       })
 
-      map.addLayer({
-        id: "township-labels",
-        type: "symbol",
-        source: "townships",
-        filter: ["==", ["get", "COUNTY"], "045"],
-        layout: {
-          "text-field": ["get", "NAME"],
-          "text-size": 11,
-          "text-font": ["Open Sans Regular"],
-        },
-        paint: {
-          "text-color": COLORS.township,
-          "text-halo-color": "#ffffff",
-          "text-halo-width": 1.5,
-        },
-        minzoom: 11,
-      })
+      // map.addLayer({
+      //   id: "township-labels",
+      //   type: "symbol",
+      //   source: "townships",
+      //   filter: ["==", ["get", "COUNTY"], "045"],
+      //   layout: {
+      //     "text-field": ["get", "NAME"],
+      //     "text-size": 11,
+      //     "text-font": ["Open Sans Regular"],
+      //   },
+      //   paint: {
+      //     "text-color": COLORS.township,
+      //     "text-halo-color": "#ffffff",
+      //     "text-halo-width": 1.5,
+      //   },
+      //   minzoom: 11,
+      // })
 
       setLoading(false)
     })
