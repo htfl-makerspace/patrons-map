@@ -39,6 +39,11 @@ export default function Map({ onMapReady }: MapProps) {
       style: STYLE_URL,
       center: DELAWARE_COUNTY_CENTER,
       zoom: DEFAULT_ZOOM,
+      minZoom: 8,
+      maxBounds: [
+        [-76.5, 39.2], // southwest corner
+        [-74.2, 40.7], // northeast corner
+      ],
     })
 
     map.addControl(new maplibregl.NavigationControl(), "bottom-right")

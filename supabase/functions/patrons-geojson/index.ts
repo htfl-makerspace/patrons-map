@@ -48,7 +48,7 @@ Deno.serve(async (req) => {
 
   while (true) {
     const { data: page, error } = await supabase
-      .from("patron_ha")
+      .from("patron_ha_dev")
       .select("barcode,latitude,longitude,created,date_issued,p_type,zip,address,circ_active,birth_date,card_at")
       .not("latitude", "is", null)
       .range(offset, offset + PAGE_SIZE - 1);

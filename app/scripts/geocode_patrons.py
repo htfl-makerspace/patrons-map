@@ -1,35 +1,39 @@
 """
-Steps 2.1 & 2.2 — Extract addresses and submit to Census Bulk Geocoder.
+Geocode patron addresses using Mapbox Geocoding v6 batch API.
 
-Step 2.1: Query patron_ha rows where latitude IS NULL, format for the
-US Census Bulk Geocoder, split into batch CSVs of ≤10,000 rows.
+Fetches patron_ha rows where latitude IS NULL, geocodes them via
+Mapbox structured input in batches of 1000, uploads results back to
+Supabase, and writes CSV audit trail to app/scripts/results/.
 
-Step 2.2: Submit each batch to the Census Geocoding API and save results.
-
-Output:
-  app/scripts/requests/batch_N.csv       — input batches
-  app/scripts/results/result_N.csv       — geocoder results
+Usage:
+    python3 geocode_patrons.py                              # geocode all ungeocoded rows in patron_ha_dev
+    python3 geocode_patrons.py --table patron_ha            # target prod table
+    python3 geocode_patrons.py test 100                     # test sample of 100 rows
+    python3 geocode_patrons.py test 100 --table patron_ha   # test sample from prod
 """
 
-import os
+import argparse
 import csv
-import math
+import os
 import random
+import re
+import sys
 import time
 from pathlib import Path
 
-import subprocess
+import requests as http_requests
 from dotenv import load_dotenv
 from supabase import create_client
 
-BATCH_SIZE = 1_000  # Census API drops connection on larger batches
-CENSUS_URL = "https://geocoding.geo.census.gov/geocoder/geographies/addressbatch"
+MAPBOX_BATCH_SIZE = 1000  # Mapbox batch endpoint max
+MAPBOX_BATCH_URL = "https://api.mapbox.com/search/geocode/v6/batch"
 SCRIPT_DIR = Path(__file__).parent
-REQUEST_DIR = SCRIPT_DIR / "requests"
 RESULT_DIR = SCRIPT_DIR / "results"
 ENV_PATH = SCRIPT_DIR.parent / ".env"
 
 load_dotenv(ENV_PATH)
+
+MAPBOX_TOKEN = os.environ.get("MAPBOX_ACCESS_TOKEN") or os.environ["VITE_MAPBOX_API_KEY"]
 
 supabase = create_client(
     os.environ["SUPABASE_URL"],
@@ -37,15 +41,15 @@ supabase = create_client(
 )
 
 
-def fetch_ungeocoded_patrons():
-    """Fetch all patron_ha rows where latitude is NULL."""
+def fetch_ungeocoded_patrons(table):
+    """Fetch all rows where latitude is NULL."""
     rows = []
     page_size = 1000
     offset = 0
 
     while True:
         resp = (
-            supabase.table("patron_ha")
+            supabase.table(table)
             .select("barcode, address, zip")
             .is_("latitude", "null")
             .range(offset, offset + page_size - 1)
@@ -62,146 +66,287 @@ def fetch_ungeocoded_patrons():
     return rows
 
 
+def fetch_low_confidence_patrons(table):
+    """Fetch all rows where geocode_confidence is 'low' or latitude is NULL."""
+    rows = []
+    page_size = 1000
+    offset = 0
+
+    while True:
+        resp = (
+            supabase.table(table)
+            .select("barcode, address, zip")
+            .or_("latitude.is.null,geocode_confidence.eq.low")
+            .range(offset, offset + page_size - 1)
+            .execute()
+        )
+        batch = resp.data
+        if not batch:
+            break
+        rows.extend(batch)
+        if len(batch) < page_size:
+            break
+        offset += page_size
+
+    return rows
+
+
 def parse_address(full_address):
-    """Extract (street_address, city) from a full address string.
+    """Extract (address_number, street, city) from a full address string.
 
     Expected format: "123 Main St, City, State ZIP" or "123 Main St, City State ZIP".
-    Returns (street, city) with the street being the first comma-delimited part
-    and the city being the second (if present).
     """
     if not full_address:
-        return "", ""
+        return "", "", ""
 
     parts = [p.strip() for p in full_address.split(",")]
+    street_part = parts[0]
 
+    # Extract house number from street
+    match = re.match(r"^(\d+[-\d]*)\s+(.+)$", street_part)
+    if match:
+        address_number = match.group(1)
+        street = match.group(2)
+    else:
+        address_number = ""
+        street = street_part
+
+    city = ""
     if len(parts) >= 2:
-        street = parts[0]
-        # The city is the second part; strip any trailing state/zip if present
         city_part = parts[1]
-        # Remove state abbreviation and zip that may be stuck to city
-        # e.g. "Havertown Pa 19083" or "West Chester Pa 19380"
         tokens = city_part.split()
-        # Walk backwards: remove zip (digits), then state abbrev (2-letter word)
-        # Keep everything else as city name
+        # Remove trailing zip (digits) and state abbreviation (2-letter)
         while tokens and tokens[-1].replace("-", "").isdigit():
             tokens.pop()
         while tokens and len(tokens[-1]) == 2 and tokens[-1].isalpha():
             tokens.pop()
         city = " ".join(tokens) if tokens else city_part
-        return street, city
 
-    # No comma — put entire string as street, leave city blank
-    return full_address.strip(), ""
+    return address_number, street, city
 
 
-def write_batch_csvs(rows):
-    """Split rows into Census-formatted CSVs of ≤BATCH_SIZE each."""
-    REQUEST_DIR.mkdir(parents=True, exist_ok=True)
-
-    num_batches = math.ceil(len(rows) / BATCH_SIZE)
-
-    for i in range(num_batches):
-        batch = rows[i * BATCH_SIZE : (i + 1) * BATCH_SIZE]
-        out_path = REQUEST_DIR / f"batch_{i + 1}.csv"
-
-        with open(out_path, "w", newline="") as f:
-            writer = csv.writer(f)
-            # No header — Census Geocoder expects raw data rows
-            for row in batch:
-                street, city = parse_address(row["address"])
-                writer.writerow([
-                    row["barcode"],       # Unique ID
-                    street,               # Street address only
-                    city,                 # City
-                    "PA",                 # State
-                    row["zip"] or "",     # ZIP
-                ])
-
-        print(f"  Wrote {out_path.name} ({len(batch)} rows)")
-
-    return num_batches
+def build_mapbox_query(row):
+    """Build a Mapbox structured geocode query dict from a patron row."""
+    address_number, street, city = parse_address(row["address"])
+    query = {
+        "types": ["address"],
+        "country": "us",
+        "limit": 1,
+    }
+    if address_number:
+        query["address_number"] = address_number
+    if street:
+        query["street"] = street
+    if city:
+        query["place"] = city
+    query["region"] = "PA"
+    if row.get("zip"):
+        query["postcode"] = str(row["zip"])
+    return query
 
 
-def submit_to_census(batch_path, max_retries=3):
-    """Submit a batch CSV to the Census Bulk Geocoder API via curl. Returns result path."""
+def extract_result(feature_collection):
+    """Extract (lat, lng, accuracy, confidence) from a Mapbox FeatureCollection.
+
+    Returns (None, None, None, None) if no match found.
+    """
+    features = feature_collection.get("features", [])
+    if not features:
+        return None, None, None, None
+
+    feature = features[0]
+    coords = feature.get("geometry", {}).get("coordinates", [])
+    if len(coords) < 2:
+        return None, None, None, None
+
+    lng, lat = coords[0], coords[1]
+
+    props = feature.get("properties", {})
+    accuracy = props.get("coordinates", {}).get("accuracy", "")
+    confidence = props.get("match_code", {}).get("confidence", "")
+
+    return lat, lng, accuracy, confidence
+
+
+DIRECTIONAL_RE = re.compile(r"^(East|West|North|South)\s+", re.IGNORECASE)
+
+
+def strip_directional(street):
+    """Remove leading directional prefix from a street name."""
+    return DIRECTIONAL_RE.sub("", street)
+
+
+def has_directional(street):
+    """Check if a street name starts with a directional prefix."""
+    return bool(DIRECTIONAL_RE.match(street))
+
+
+def _post_batch(queries):
+    """POST a batch of queries to Mapbox and return the batch results list."""
+    resp = http_requests.post(
+        MAPBOX_BATCH_URL,
+        params={"access_token": MAPBOX_TOKEN, "permanent": "true"},
+        json=queries,
+        timeout=30,
+    )
+    resp.raise_for_status()
+    return resp.json().get("batch", [])
+
+
+def geocode_batch_mapbox(rows):
+    """Geocode a list of patron rows using Mapbox batch API.
+
+    Splits into chunks of 1000, POSTs each chunk, returns list of
+    (barcode, lat, lng, accuracy, confidence) tuples.
+
+    Misses whose street name has a directional prefix (East, West, North,
+    South) are retried without the directional. Only exact/high confidence
+    retry results are accepted.
+    """
+    results = []
+    total_chunks = (len(rows) + MAPBOX_BATCH_SIZE - 1) // MAPBOX_BATCH_SIZE
+
+    for chunk_idx in range(total_chunks):
+        start = chunk_idx * MAPBOX_BATCH_SIZE
+        end = min(start + MAPBOX_BATCH_SIZE, len(rows))
+        chunk = rows[start:end]
+
+        queries = [build_mapbox_query(row) for row in chunk]
+
+        batch_results = _post_batch(queries)
+        matched = 0
+        for i, fc in enumerate(batch_results):
+            barcode = chunk[i]["barcode"]
+            lat, lng, accuracy, confidence = extract_result(fc)
+            results.append((barcode, lat, lng, accuracy, confidence))
+            if lat is not None:
+                matched += 1
+
+        print(f"  Batch {chunk_idx + 1}/{total_chunks}: {matched}/{len(chunk)} matched")
+
+        # Rate limit: ~20 batches/min -> 3s sleep between batches
+        if chunk_idx < total_chunks - 1:
+            time.sleep(3)
+
+    # Retry misses that have a directional prefix, without the directional
+    retry_indices = []
+    retry_queries = []
+    for i, (barcode, lat, lng, acc, conf) in enumerate(results):
+        if lat is not None and conf not in ("low",):
+            continue
+        address_number, street, city = parse_address(rows[i]["address"])
+        if not has_directional(street):
+            continue
+        query = build_mapbox_query(rows[i])
+        query["street"] = strip_directional(street)
+        retry_indices.append(i)
+        retry_queries.append(query)
+
+    if retry_queries:
+        print(f"\n  Retrying {len(retry_queries)} directional addresses without prefix...")
+        retry_results = _post_batch(retry_queries)
+        upgraded = 0
+        for j, fc in enumerate(retry_results):
+            lat, lng, accuracy, confidence = extract_result(fc)
+            if lat is not None and confidence in ("exact", "high"):
+                idx = retry_indices[j]
+                results[idx] = (results[idx][0], lat, lng, accuracy, confidence)
+                upgraded += 1
+        print(f"  Directional retry: {upgraded}/{len(retry_queries)} resolved (exact/high only)")
+
+    return results
+
+
+def write_results_csv(results, filename="mapbox_results.csv"):
+    """Write geocoding results to CSV for audit trail."""
     RESULT_DIR.mkdir(parents=True, exist_ok=True)
-    result_path = RESULT_DIR / batch_path.name.replace("batch_", "result_")
+    out_path = RESULT_DIR / filename
 
-    # Skip if result already exists
-    if result_path.exists() and result_path.stat().st_size > 0:
-        lines = result_path.read_text().strip().split("\n")
-        matches = sum(1 for line in lines if '"Match"' in line)
-        print(f"  ✓ {result_path.name} already exists ({len(lines)} rows, {matches} matched) — skipping")
-        return result_path
+    with open(out_path, "w", newline="") as f:
+        writer = csv.writer(f)
+        writer.writerow(["barcode", "latitude", "longitude", "accuracy", "confidence"])
+        for barcode, lat, lng, accuracy, confidence in results:
+            writer.writerow([barcode, lat or "", lng or "", accuracy or "", confidence or ""])
 
-    for attempt in range(1, max_retries + 1):
-        print(f"  Submitting {batch_path.name} (attempt {attempt}/{max_retries})...")
+    print(f"  Results written to {out_path}")
+    return out_path
+
+
+def upload_to_supabase(results, table):
+    """Update rows with lat/lng/accuracy/confidence from geocoding results."""
+    matched = [(b, lat, lng, acc, conf) for b, lat, lng, acc, conf in results if lat is not None]
+    total = len(matched)
+    success = 0
+    errors = 0
+
+    for i, (barcode, lat, lng, accuracy, confidence) in enumerate(matched):
         try:
-            result = subprocess.run(
-                [
-                    "curl", "-s", "--max-time", "300",
-                    "-F", f"addressFile=@{str(batch_path)}",
-                    "-F", "benchmark=Public_AR_Current",
-                    "-F", "vintage=Current_Current",
-                    CENSUS_URL,
-                ],
-                capture_output=True, text=True, timeout=600,
-            )
-            if result.returncode != 0:
-                raise RuntimeError(f"curl exit code {result.returncode}: {result.stderr}")
-            if not result.stdout.strip():
-                raise RuntimeError("Empty response from Census API")
-            if "<p>" in result.stdout or "<html" in result.stdout.lower():
-                raise RuntimeError("Census API returned error page (server overload or bad data)")
-            break
-        except (RuntimeError, subprocess.TimeoutExpired) as e:
-            if attempt == max_retries:
-                print(f"  FAILED after {max_retries} attempts: {e}")
-                raise
-            wait = 15 * attempt
-            print(f"  Error: {e}. Retrying in {wait}s...")
-            time.sleep(wait)
+            update_data = {
+                "latitude": lat,
+                "longitude": lng,
+                "geocode_accuracy": accuracy or None,
+                "geocode_confidence": confidence or None,
+            }
+            supabase.table(table).update(update_data).eq("barcode", barcode).execute()
+            success += 1
+        except Exception as e:
+            errors += 1
+            if errors <= 10:
+                print(f"  Error updating {barcode}: {e}")
 
-    with open(result_path, "w") as f:
-        f.write(result.stdout)
+        if (i + 1) % 500 == 0:
+            print(f"  Uploaded {i + 1}/{total}")
 
-    # Count matches
-    lines = result.stdout.strip().split("\n")
-    matches = sum(1 for line in lines if '"Match"' in line)
-    print(f"  → {result_path.name}: {len(lines)} rows, {matches} matched")
-
-    return result_path
+    print(f"\nUpload complete: {success} updated, {errors} errors out of {total} matched")
 
 
-def main():
-    print("Fetching un-geocoded patrons from Supabase...")
-    rows = fetch_ungeocoded_patrons()
-    print(f"Found {len(rows)} rows with latitude IS NULL")
+def parse_args():
+    """Parse CLI arguments, handling both subcommand and flag styles."""
+    parser = argparse.ArgumentParser(description="Geocode patron addresses via Mapbox")
+    parser.add_argument("command", nargs="?", default="run",
+                        help="'run' (default) or 'test'")
+    parser.add_argument("sample_size", nargs="?", type=int, default=500,
+                        help="Sample size for test mode (default: 500)")
+    parser.add_argument("--table", default="patron_ha_dev",
+                        help="Target table (default: patron_ha_dev)")
+    parser.add_argument("--retry-low", action="store_true",
+                        help="Also re-geocode rows with geocode_confidence='low'")
+    return parser.parse_args()
+
+
+def main(table, retry_low=False):
+    if retry_low:
+        print(f"Fetching ungeocoded + low-confidence patrons from {table}...")
+        rows = fetch_low_confidence_patrons(table)
+        print(f"Found {len(rows)} rows (latitude IS NULL or confidence = low)")
+    else:
+        print(f"Fetching ungeocoded patrons from {table}...")
+        rows = fetch_ungeocoded_patrons(table)
+        print(f"Found {len(rows)} rows with latitude IS NULL")
 
     if not rows:
         print("Nothing to geocode.")
         return
 
-    # Step 2.1 — write batch CSVs
-    num = write_batch_csvs(rows)
-    print(f"\n{num} batch file(s) written to {REQUEST_DIR}/")
+    print(f"\nGeocoding {len(rows)} addresses via Mapbox batch API...")
+    results = geocode_batch_mapbox(rows)
 
-    # Step 2.2 — submit each batch to Census Geocoder
-    print("\nSubmitting batches to Census Bulk Geocoder...")
-    for i in range(1, num + 1):
-        batch_path = REQUEST_DIR / f"batch_{i}.csv"
-        submit_to_census(batch_path)
-        if i < num:
-            print("  Waiting 5s before next batch...")
-            time.sleep(5)
+    # Stats
+    matched = sum(1 for _, lat, *_ in results if lat is not None)
+    print(f"\nMatched: {matched}/{len(results)} ({100 * matched / len(results):.1f}%)")
 
-    print("\nDone — result files written to", RESULT_DIR)
+    # Audit trail
+    write_results_csv(results)
+
+    # Upload
+    print(f"\nUploading {matched} coordinates to {table}...")
+    upload_to_supabase(results, table)
 
 
-def test_sample(n=500):
-    """Fetch n random ungeocoded addresses, submit to Census API, and print match stats."""
-    print(f"Fetching ungeocoded patrons from Supabase...")
-    rows = fetch_ungeocoded_patrons()
+def test_sample(n, table):
+    """Geocode a random sample of ungeocoded addresses and print stats."""
+    print(f"Fetching ungeocoded patrons from {table}...")
+    rows = fetch_ungeocoded_patrons(table)
     print(f"Found {len(rows)} total ungeocoded rows")
 
     if not rows:
@@ -211,80 +356,54 @@ def test_sample(n=500):
     sample = random.sample(rows, min(n, len(rows)))
     print(f"Sampled {len(sample)} addresses for test\n")
 
-    # Write test batch
-    REQUEST_DIR.mkdir(parents=True, exist_ok=True)
-    test_batch = REQUEST_DIR / "test_sample.csv"
-    with open(test_batch, "w", newline="") as f:
-        writer = csv.writer(f)
-        for row in sample:
-            street, city = parse_address(row["address"])
-            writer.writerow([
-                row["barcode"],
-                street,
-                city,
-                "PA",
-                row["zip"] or "",
-            ])
+    print("Geocoding via Mapbox batch API...")
+    results = geocode_batch_mapbox(sample)
 
-    # Submit to Census API (bypass the skip-if-exists logic)
-    print("Submitting test batch to Census API...")
-    result = subprocess.run(
-        [
-            "curl", "-s", "--max-time", "300",
-            "-F", f"addressFile=@{str(test_batch)}",
-            "-F", "benchmark=Public_AR_Current",
-            "-F", "vintage=Current_Current",
-            CENSUS_URL,
-        ],
-        capture_output=True, text=True, timeout=600,
-    )
+    # Stats
+    matched = sum(1 for _, lat, *_ in results if lat is not None)
+    unmatched = len(results) - matched
 
-    if result.returncode != 0 or not result.stdout.strip():
-        print(f"ERROR: Census API failed. stderr: {result.stderr}")
-        return
+    # Accuracy breakdown
+    accuracy_counts = {}
+    confidence_counts = {}
+    for _, lat, _, acc, conf in results:
+        if lat is not None:
+            accuracy_counts[acc] = accuracy_counts.get(acc, 0) + 1
+            confidence_counts[conf] = confidence_counts.get(conf, 0) + 1
 
-    # Save result
-    RESULT_DIR.mkdir(parents=True, exist_ok=True)
-    result_path = RESULT_DIR / "test_sample_result.csv"
-    with open(result_path, "w") as f:
-        f.write(result.stdout)
-
-    # Parse and summarize results
-    lines = result.stdout.strip().split("\n")
-    matches = 0
-    no_matches = 0
-    ties = 0
-    for line in lines:
-        if '"Match"' in line:
-            matches += 1
-        elif '"No_Match"' in line:
-            no_matches += 1
-        elif '"Tie"' in line:
-            ties += 1
-
-    total = len(lines)
-    print(f"\n{'='*40}")
+    total = len(results)
+    print(f"\n{'=' * 40}")
     print(f"RESULTS ({total} rows)")
-    print(f"{'='*40}")
-    print(f"  Match:    {matches:>5}  ({100*matches/total:.1f}%)")
-    print(f"  No_Match: {no_matches:>5}  ({100*no_matches/total:.1f}%)")
-    if ties:
-        print(f"  Tie:      {ties:>5}  ({100*ties/total:.1f}%)")
-    print(f"{'='*40}")
-    print(f"\nInput:  {test_batch}")
-    print(f"Result: {result_path}")
+    print(f"{'=' * 40}")
+    print(f"  Matched:   {matched:>5}  ({100 * matched / total:.1f}%)")
+    print(f"  Unmatched: {unmatched:>5}  ({100 * unmatched / total:.1f}%)")
 
-    # Show a few No_Match examples
-    no_match_lines = [l for l in lines if '"No_Match"' in l]
-    if no_match_lines:
-        print(f"\nSample No_Match rows (up to 5):")
-        for line in no_match_lines[:5]:
-            print(f"  {line.strip()}")
+    if accuracy_counts:
+        print(f"\n  Accuracy breakdown:")
+        for acc, count in sorted(accuracy_counts.items(), key=lambda x: -x[1]):
+            print(f"    {acc or 'unknown':<15} {count:>5}  ({100 * count / matched:.1f}%)")
+
+    if confidence_counts:
+        print(f"\n  Confidence breakdown:")
+        for conf, count in sorted(confidence_counts.items(), key=lambda x: -x[1]):
+            print(f"    {conf or 'unknown':<15} {count:>5}  ({100 * count / matched:.1f}%)")
+
+    print(f"{'=' * 40}")
+
+    # Write audit CSV
+    write_results_csv(results, "test_sample_mapbox.csv")
+
+    # Show unmatched examples
+    unmatched_rows = [(sample[i], results[i]) for i in range(len(results)) if results[i][1] is None]
+    if unmatched_rows:
+        print(f"\nSample unmatched addresses (up to 5):")
+        for row, _ in unmatched_rows[:5]:
+            print(f"  {row['barcode']}: {row['address']}, {row['zip']}")
 
 
 if __name__ == "__main__":
-    import sys
-    if len(sys.argv) > 1 and sys.argv[1] == "test":
-        test_sample()
+    args = parse_args()
+    if args.command == "test":
+        test_sample(args.sample_size, args.table)
     else:
-        main()
+        main(args.table, retry_low=args.retry_low)
