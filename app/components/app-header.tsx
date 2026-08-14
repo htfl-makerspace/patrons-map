@@ -11,21 +11,33 @@ export function AppHeader() {
   }
 
   return (
-    <header className="absolute top-0 left-0 right-0 z-10 flex items-center p-5 bg-white">
-      <img src={`${import.meta.env.BASE_URL}htfl_logo.png`} className="max-w-40 absolute top-2 left-2" />
-      <div className="flex-1 text-center">
-        <div className="font-semibold text-xl">
+    <div className="relative w-screen flex items-start justify-between z-10 p-3">
+      {/* Logo — top left */}
+      <div className="relative z-10 bg-white/95 backdrop-blur-sm rounded-lg shadow-lg p-2">
+        <img
+          src={`${import.meta.env.BASE_URL}htfl_logo.png`}
+          className="max-w-32"
+        />
+      </div>
+
+      {/* Title — top center */}
+      <div className="relative z-10 bg-white/95 backdrop-blur-sm rounded-lg shadow-lg p-5 text-center">
+        <div className="font-semibold text-lg leading-tight">
           A Geographical Distribution of the Library's Patrons
         </div>
-        <div className="text-base text-muted-foreground">2001 – present</div>
+        <div className="text-sm text-muted-foreground">2001 – present</div>
       </div>
-      <Button
-        variant="outline"
-        size="sm"
-        onClick={handleSignOut}
-        className="bg-[var(--htfl-indigo)] text-white">
-        Sign out
-      </Button>
-    </header>
+
+      {/* Sign out — top right */}
+      <div className="relative z-10">
+        <Button
+          variant="outline"
+          size="sm"
+          onClick={handleSignOut}
+          className="bg-[var(--htfl-indigo)] text-white shadow-lg">
+          Sign out
+        </Button>
+      </div>
+    </div>
   )
 }

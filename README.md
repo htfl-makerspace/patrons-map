@@ -15,17 +15,28 @@ strategic planning/
 │           └── patron_ha_cleaned.csv   # Final cleaned output
 │
 ├── app/                            # React frontend + backend scripts
+│   ├── components/
+│   │   ├── map.tsx                 # MapLibre GL map with all layers
+│   │   ├── map-controls.tsx        # Layer toggles + choropleth radio group
+│   │   ├── info-panel.tsx          # Legend + data sources panel
+│   │   ├── time-filter.tsx         # Date range slider for patron dots
+│   │   ├── choropleth-config.ts    # Shared choropleth metric definitions
+│   │   └── app-header.tsx          # Logo, title, sign-out
 │   ├── scripts/
 │   │   ├── upload_csv.py           # Upload cleaned CSV to Supabase (upsert)
 │   │   ├── geocode_patrons.py      # Geocode addresses via Mapbox batch API
-│   │   ├── preprocess_unmatched.py  # Filter & clean unmatched addresses for Google
+│   │   ├── preprocess_unmatched.py # Filter & clean unmatched addresses for Google
 │   │   ├── validate_addresses.py   # Validate/correct addresses via Google API
-│   │   ├── parse_and_upload.py     # (legacy) Census geocoder result parser
+│   │   ├── fetch_census_blockgroups.py # Fetch ACS demographics + TIGER boundaries
 │   │   ├── export_geojson.py       # Export GeoJSON from Supabase
 │   │   ├── download_boundaries.py  # Download boundary shapefiles
 │   │   └── results/                # Geocoding audit CSVs
-│   ├── routes/                     # TanStack Router pages
-│   ├── src/                        # React components, hooks, utils
+│   ├── public/data/                # Static boundary & census GeoJSON
+│   │   ├── blockgroups.geojson     # Block group polygons + demographics
+│   │   ├── tracts.geojson          # Census tract boundaries
+│   │   ├── townships.geojson       # Township boundaries
+│   │   └── counties.geojson        # County boundaries
+│   ├── routes/                     # TanStack Router pages (/, /login)
 │   ├── .env                        # API keys (gitignored)
 │   └── vite.config.ts
 │
@@ -49,6 +60,10 @@ The pipeline has four stages. Each can be run independently.
                         |               Mapbox batch API       (validate_addresses.py)
                    patron_ha_cleaned.csv                            |
                                                              Google Address API
+
+         [C] Census data (independent, run as needed)
+              fetch_census_blockgroups.py  --->  blockgroups.geojson
+              (ACS 5-Year + TIGER/Line)          (static, checked into repo)
 ```
 
 ### Stage 1: Clean Data (Jupyter Notebook)
@@ -168,14 +183,46 @@ Pricing: $0.017/request with $200/month free credit (~11,700 free validations).
 
 Audit results are written to `app/scripts/results/google_validation.csv`.
 
+### Census Block Group Data
+
+`fetch_census_blockgroups.py` fetches ACS 5-Year Estimates (2022) and TIGER/Line boundaries for the 24 census tracts covering Haverford Township. It joins demographic data to block group polygons and outputs `blockgroups.geojson`.
+
+```bash
+cd app/scripts
+source ../../jupyter/.venv/bin/activate
+python3 fetch_census_blockgroups.py
+```
+
+Variables fetched:
+- B01003: Total population
+- B19025/B11001: Mean household income (aggregate income / households)
+- B19013: Median household income
+- B19301: Per capita income
+
+Output: `app/public/data/blockgroups.geojson` (74 block groups with demographics + polygon boundaries)
+
 ### Stage 4: View on Map
 
-The React app fetches GeoJSON from the Supabase edge function (`patrons-geojson`) and renders patron dots on a map.
+The React app renders an interactive map with patron data and census demographics.
 
 ```bash
 cd app
 npm run dev
 ```
+
+**Map features:**
+
+- **Patron dots** — fetched from the Supabase edge function (`patrons-geojson`) with auth. Each dot is clickable for address details.
+- **Choropleth layers** — mutually exclusive radio selection:
+  - Penetration rate (patron count / population, computed client-side)
+  - Mean household income
+  - Median household income
+  - Per capita income
+- **Boundary layers** — toggleable overlays for census tracts, townships, and Delaware County border. Haverford Township is highlighted.
+- **Block group popups** — clicking a block group shows population, all income metrics, patron count, and penetration rate.
+- **Time filter** — date range slider to filter patron dots by account creation date.
+- **Info panel** — dynamic legend (updates with active layers), geocoding confidence breakdown, and data source documentation.
+- **Authentication** — Supabase auth with a login page; patron data requires a valid session.
 
 ## Dev/Prod Table Strategy
 
@@ -298,7 +345,7 @@ Stored in `app/.env` (gitignored):
 **Python** (data pipeline):
 ```bash
 cd jupyter && source .venv/bin/activate
-pip install pandas supabase python-dotenv requests plotly
+pip install pandas supabase python-dotenv requests plotly fiona
 ```
 
 **Node** (frontend):

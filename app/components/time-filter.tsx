@@ -9,9 +9,10 @@ const MAX_YEAR = 2026
 
 interface TimeFilterProps {
   map: maplibregl.Map | null
+  disabled?: boolean
 }
 
-export default function TimeFilter({ map }: TimeFilterProps) {
+export default function TimeFilter({ map, disabled = false }: TimeFilterProps) {
   const [range, setRange] = useState<[number, number]>([MIN_YEAR, MAX_YEAR])
   const [count, setCount] = useState<number | null>(null)
   const [total, setTotal] = useState<number | null>(null)
@@ -84,7 +85,7 @@ export default function TimeFilter({ map }: TimeFilterProps) {
   }, [map, updateCount, range])
 
   return (
-    <div className="absolute bottom-6 left-1/2 -translate-x-1/2 z-10 bg-white/95 backdrop-blur-sm rounded-lg shadow-lg px-6 py-4 w-[420px]">
+    <div className={`mt-auto flex-shrink-0 pointer-events-auto bg-white/95 backdrop-blur-sm rounded-lg shadow-lg px-5 py-4 transition-opacity ${disabled ? "opacity-50 pointer-events-none" : ""}`}>
       <div className="flex items-center justify-between mb-3">
         <span className="text-sm font-medium text-gray-700">
           {range[0]} &ndash; {range[1]}

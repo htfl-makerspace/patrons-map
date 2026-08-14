@@ -1,0 +1,594 @@
+[
+  {
+    "GEOID": "420454005001",
+    "tract": "400500",
+    "bg": "1",
+    "population": 1570,
+    "median_income": 43254,
+    "per_capita_income": 22214
+  },
+  {
+    "GEOID": "420454005002",
+    "tract": "400500",
+    "bg": "2",
+    "population": 2339,
+    "median_income": 54732,
+    "per_capita_income": 30409
+  },
+  {
+    "GEOID": "420454006001",
+    "tract": "400600",
+    "bg": "1",
+    "population": 2307,
+    "median_income": 70479,
+    "per_capita_income": 30454
+  },
+  {
+    "GEOID": "420454006002",
+    "tract": "400600",
+    "bg": "2",
+    "population": 1396,
+    "median_income": 96515,
+    "per_capita_income": 48419
+  },
+  {
+    "GEOID": "420454006003",
+    "tract": "400600",
+    "bg": "3",
+    "population": 1617,
+    "median_income": 72083,
+    "per_capita_income": 29061
+  },
+  {
+    "GEOID": "420454011031",
+    "tract": "401103",
+    "bg": "1",
+    "population": 710,
+    "median_income": 88295,
+    "per_capita_income": 56578
+  },
+  {
+    "GEOID": "420454011032",
+    "tract": "401103",
+    "bg": "2",
+    "population": 1886,
+    "median_income": 145724,
+    "per_capita_income": 65779
+  },
+  {
+    "GEOID": "420454011033",
+    "tract": "401103",
+    "bg": "3",
+    "population": 653,
+    "median_income": 76761,
+    "per_capita_income": 37006
+  },
+  {
+    "GEOID": "420454011041",
+    "tract": "401104",
+    "bg": "1",
+    "population": 2218,
+    "median_income": 87217,
+    "per_capita_income": 43829
+  },
+  {
+    "GEOID": "420454011042",
+    "tract": "401104",
+    "bg": "2",
+    "population": 2244,
+    "median_income": 49356,
+    "per_capita_income": 28030
+  },
+  {
+    "GEOID": "420454012001",
+    "tract": "401200",
+    "bg": "1",
+    "population": 754,
+    "median_income": 66467,
+    "per_capita_income": 44322
+  },
+  {
+    "GEOID": "420454012002",
+    "tract": "401200",
+    "bg": "2",
+    "population": 636,
+    "median_income": 169531,
+    "per_capita_income": 52500
+  },
+  {
+    "GEOID": "420454012003",
+    "tract": "401200",
+    "bg": "3",
+    "population": 540,
+    "median_income": 75625,
+    "per_capita_income": 40518
+  },
+  {
+    "GEOID": "420454012004",
+    "tract": "401200",
+    "bg": "4",
+    "population": 1557,
+    "median_income": 86528,
+    "per_capita_income": 42283
+  },
+  {
+    "GEOID": "420454078021",
+    "tract": "407802",
+    "bg": "1",
+    "population": 1405,
+    "median_income": 218889,
+    "per_capita_income": 80821
+  },
+  {
+    "GEOID": "420454078022",
+    "tract": "407802",
+    "bg": "2",
+    "population": 1934,
+    "median_income": 148365,
+    "per_capita_income": 60569
+  },
+  {
+    "GEOID": "420454078023",
+    "tract": "407802",
+    "bg": "3",
+    "population": 765,
+    "median_income": 171528,
+    "per_capita_income": 49806
+  },
+  {
+    "GEOID": "420454078024",
+    "tract": "407802",
+    "bg": "4",
+    "population": 742,
+    "median_income": 113750,
+    "per_capita_income": 62825
+  },
+  {
+    "GEOID": "420454078025",
+    "tract": "407802",
+    "bg": "5",
+    "population": 1413,
+    "median_income": 146200,
+    "per_capita_income": 58601
+  },
+  {
+    "GEOID": "420454081011",
+    "tract": "408101",
+    "bg": "1",
+    "population": 3643,
+    "median_income": 125833,
+    "per_capita_income": 53415
+  },
+  {
+    "GEOID": "420454081012",
+    "tract": "408101",
+    "bg": "2",
+    "population": 2635,
+    "median_income": 137083,
+    "per_capita_income": 50491
+  },
+  {
+    "GEOID": "420454081031",
+    "tract": "408103",
+    "bg": "1",
+    "population": 2006,
+    "median_income": 109375,
+    "per_capita_income": 51526
+  },
+  {
+    "GEOID": "420454081032",
+    "tract": "408103",
+    "bg": "2",
+    "population": 67,
+    "median_income": null,
+    "per_capita_income": 7969
+  },
+  {
+    "GEOID": "420454081033",
+    "tract": "408103",
+    "bg": "3",
+    "population": 1943,
+    "median_income": 81367,
+    "per_capita_income": 41351
+  },
+  {
+    "GEOID": "420454083001",
+    "tract": "408300",
+    "bg": "1",
+    "population": 1995,
+    "median_income": 99271,
+    "per_capita_income": 26178
+  },
+  {
+    "GEOID": "420454083002",
+    "tract": "408300",
+    "bg": "2",
+    "population": 1613,
+    "median_income": 250001,
+    "per_capita_income": 125440
+  },
+  {
+    "GEOID": "420454083003",
+    "tract": "408300",
+    "bg": "3",
+    "population": 1056,
+    "median_income": 109881,
+    "per_capita_income": 59357
+  },
+  {
+    "GEOID": "420454084001",
+    "tract": "408400",
+    "bg": "1",
+    "population": 2266,
+    "median_income": 114611,
+    "per_capita_income": 102560
+  },
+  {
+    "GEOID": "420454085001",
+    "tract": "408500",
+    "bg": "1",
+    "population": 1315,
+    "median_income": 137083,
+    "per_capita_income": 52453
+  },
+  {
+    "GEOID": "420454085002",
+    "tract": "408500",
+    "bg": "2",
+    "population": 1007,
+    "median_income": 54823,
+    "per_capita_income": 40839
+  },
+  {
+    "GEOID": "420454085003",
+    "tract": "408500",
+    "bg": "3",
+    "population": 903,
+    "median_income": 113125,
+    "per_capita_income": 49059
+  },
+  {
+    "GEOID": "420454085004",
+    "tract": "408500",
+    "bg": "4",
+    "population": 1068,
+    "median_income": 96080,
+    "per_capita_income": 39982
+  },
+  {
+    "GEOID": "420454086001",
+    "tract": "408600",
+    "bg": "1",
+    "population": 1143,
+    "median_income": 223466,
+    "per_capita_income": 64094
+  },
+  {
+    "GEOID": "420454086002",
+    "tract": "408600",
+    "bg": "2",
+    "population": 518,
+    "median_income": 81806,
+    "per_capita_income": 56308
+  },
+  {
+    "GEOID": "420454086003",
+    "tract": "408600",
+    "bg": "3",
+    "population": 755,
+    "median_income": 85694,
+    "per_capita_income": 36119
+  },
+  {
+    "GEOID": "420454086004",
+    "tract": "408600",
+    "bg": "4",
+    "population": 923,
+    "median_income": 136628,
+    "per_capita_income": 70086
+  },
+  {
+    "GEOID": "420454087001",
+    "tract": "408700",
+    "bg": "1",
+    "population": 1346,
+    "median_income": 169702,
+    "per_capita_income": 88382
+  },
+  {
+    "GEOID": "420454087002",
+    "tract": "408700",
+    "bg": "2",
+    "population": 1969,
+    "median_income": 88587,
+    "per_capita_income": 41809
+  },
+  {
+    "GEOID": "420454087003",
+    "tract": "408700",
+    "bg": "3",
+    "population": 1461,
+    "median_income": 183625,
+    "per_capita_income": 63759
+  },
+  {
+    "GEOID": "420454088001",
+    "tract": "408800",
+    "bg": "1",
+    "population": 784,
+    "median_income": 129167,
+    "per_capita_income": 61971
+  },
+  {
+    "GEOID": "420454088002",
+    "tract": "408800",
+    "bg": "2",
+    "population": 2530,
+    "median_income": 139244,
+    "per_capita_income": 65823
+  },
+  {
+    "GEOID": "420454088003",
+    "tract": "408800",
+    "bg": "3",
+    "population": 1849,
+    "median_income": 107885,
+    "per_capita_income": 50664
+  },
+  {
+    "GEOID": "420454089001",
+    "tract": "408900",
+    "bg": "1",
+    "population": 1578,
+    "median_income": 171250,
+    "per_capita_income": 88151
+  },
+  {
+    "GEOID": "420454089002",
+    "tract": "408900",
+    "bg": "2",
+    "population": 1546,
+    "median_income": 151750,
+    "per_capita_income": 59096
+  },
+  {
+    "GEOID": "420454090001",
+    "tract": "409000",
+    "bg": "1",
+    "population": 1702,
+    "median_income": 108542,
+    "per_capita_income": 48170
+  },
+  {
+    "GEOID": "420454090002",
+    "tract": "409000",
+    "bg": "2",
+    "population": 1091,
+    "median_income": 126250,
+    "per_capita_income": 66073
+  },
+  {
+    "GEOID": "420454090003",
+    "tract": "409000",
+    "bg": "3",
+    "population": 880,
+    "median_income": 208068,
+    "per_capita_income": 78690
+  },
+  {
+    "GEOID": "420454091001",
+    "tract": "409100",
+    "bg": "1",
+    "population": 841,
+    "median_income": 140625,
+    "per_capita_income": 55514
+  },
+  {
+    "GEOID": "420454091002",
+    "tract": "409100",
+    "bg": "2",
+    "population": 1066,
+    "median_income": 110455,
+    "per_capita_income": 61214
+  },
+  {
+    "GEOID": "420454091003",
+    "tract": "409100",
+    "bg": "3",
+    "population": 2622,
+    "median_income": 117198,
+    "per_capita_income": 48943
+  },
+  {
+    "GEOID": "420454092001",
+    "tract": "409200",
+    "bg": "1",
+    "population": 1010,
+    "median_income": 132500,
+    "per_capita_income": 53598
+  },
+  {
+    "GEOID": "420454092002",
+    "tract": "409200",
+    "bg": "2",
+    "population": 1431,
+    "median_income": 154750,
+    "per_capita_income": 55880
+  },
+  {
+    "GEOID": "420454092003",
+    "tract": "409200",
+    "bg": "3",
+    "population": 1741,
+    "median_income": 114643,
+    "per_capita_income": 42569
+  },
+  {
+    "GEOID": "420454093001",
+    "tract": "409300",
+    "bg": "1",
+    "population": 1109,
+    "median_income": 86215,
+    "per_capita_income": 36506
+  },
+  {
+    "GEOID": "420454093002",
+    "tract": "409300",
+    "bg": "2",
+    "population": 1290,
+    "median_income": 137292,
+    "per_capita_income": 83222
+  },
+  {
+    "GEOID": "420454094001",
+    "tract": "409400",
+    "bg": "1",
+    "population": 1599,
+    "median_income": 129250,
+    "per_capita_income": 47997
+  },
+  {
+    "GEOID": "420454094002",
+    "tract": "409400",
+    "bg": "2",
+    "population": 1304,
+    "median_income": 140625,
+    "per_capita_income": 53654
+  },
+  {
+    "GEOID": "420454095001",
+    "tract": "409500",
+    "bg": "1",
+    "population": 1703,
+    "median_income": 56875,
+    "per_capita_income": 36076
+  },
+  {
+    "GEOID": "420454095002",
+    "tract": "409500",
+    "bg": "2",
+    "population": 1104,
+    "median_income": 132969,
+    "per_capita_income": 47241
+  },
+  {
+    "GEOID": "420454095003",
+    "tract": "409500",
+    "bg": "3",
+    "population": 1356,
+    "median_income": 150875,
+    "per_capita_income": 53124
+  },
+  {
+    "GEOID": "420454095004",
+    "tract": "409500",
+    "bg": "4",
+    "population": 901,
+    "median_income": 137933,
+    "per_capita_income": 35256
+  },
+  {
+    "GEOID": "420454096011",
+    "tract": "409601",
+    "bg": "1",
+    "population": 899,
+    "median_income": 94167,
+    "per_capita_income": 97514
+  },
+  {
+    "GEOID": "420454096012",
+    "tract": "409601",
+    "bg": "2",
+    "population": 1547,
+    "median_income": 156225,
+    "per_capita_income": 67692
+  },
+  {
+    "GEOID": "420454096013",
+    "tract": "409601",
+    "bg": "3",
+    "population": 2200,
+    "median_income": 150851,
+    "per_capita_income": 85732
+  },
+  {
+    "GEOID": "420454096021",
+    "tract": "409602",
+    "bg": "1",
+    "population": 1414,
+    "median_income": 67500,
+    "per_capita_income": 58037
+  },
+  {
+    "GEOID": "420454096022",
+    "tract": "409602",
+    "bg": "2",
+    "population": 1773,
+    "median_income": null,
+    "per_capita_income": 4048
+  },
+  {
+    "GEOID": "420454096023",
+    "tract": "409602",
+    "bg": "3",
+    "population": 1161,
+    "median_income": 79769,
+    "per_capita_income": 50076
+  },
+  {
+    "GEOID": "420454096024",
+    "tract": "409602",
+    "bg": "4",
+    "population": 854,
+    "median_income": 136477,
+    "per_capita_income": 80433
+  },
+  {
+    "GEOID": "420454097011",
+    "tract": "409701",
+    "bg": "1",
+    "population": 1216,
+    "median_income": 241471,
+    "per_capita_income": 135161
+  },
+  {
+    "GEOID": "420454097012",
+    "tract": "409701",
+    "bg": "2",
+    "population": 2070,
+    "median_income": 250001,
+    "per_capita_income": 85386
+  },
+  {
+    "GEOID": "420454097013",
+    "tract": "409701",
+    "bg": "3",
+    "population": 0,
+    "median_income": null,
+    "per_capita_income": null
+  },
+  {
+    "GEOID": "420454097014",
+    "tract": "409701",
+    "bg": "4",
+    "population": 741,
+    "median_income": 250001,
+    "per_capita_income": 87215
+  },
+  {
+    "GEOID": "420454097015",
+    "tract": "409701",
+    "bg": "5",
+    "population": 2218,
+    "median_income": 250001,
+    "per_capita_income": 104489
+  },
+  {
+    "GEOID": "420454097016",
+    "tract": "409701",
+    "bg": "6",
+    "population": 1099,
+    "median_income": 250001,
+    "per_capita_income": 27784
+  }
+]
