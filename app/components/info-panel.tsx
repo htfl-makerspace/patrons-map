@@ -1,6 +1,7 @@
 import { useState, useMemo } from "react"
 import { getChoroplethMetric } from "./choropleth-config"
-import { AGE_GROUP_COLORS, UNIFORM_DOT_COLOR } from "./map-controls"
+import { UNIFORM_DOT_COLOR } from "./map-controls"
+import { AGE_GROUP_KEYS, AGE_GROUP_LABELS, AGE_GROUP_COLORS } from "./census-age-data"
 
 interface InfoPanelProps {
   patronFeatures: GeoJSON.Feature[]
@@ -29,7 +30,6 @@ function Legend({
   const hasAny =
     layerVisibility.dots ||
     layerVisibility.choropleth ||
-    layerVisibility["tract-borders"] ||
     layerVisibility["township-borders"]
 
   if (!hasAny) return null
@@ -52,13 +52,13 @@ function Legend({
       )}
       {layerVisibility.dots && dotColorMode === "age_group" && (
         <div className="space-y-1">
-          {Object.entries(AGE_GROUP_COLORS).map(([key, { label, color }]) => (
+          {AGE_GROUP_KEYS.map((key) => (
             <div key={key} className="flex items-center gap-2">
               <span
                 className="inline-block w-3 h-3 rounded-full flex-shrink-0"
-                style={{ backgroundColor: color, opacity: 0.6 }}
+                style={{ backgroundColor: AGE_GROUP_COLORS[key], opacity: 0.6 }}
               />
-              <span className="text-xs text-gray-600">{label}</span>
+              <span className="text-xs text-gray-600">{AGE_GROUP_LABELS[key]}</span>
             </div>
           ))}
         </div>
@@ -109,18 +109,21 @@ function Legend({
         </>
       )}
 
-      {layerVisibility["tract-borders"] && (
-        <div className="flex items-center gap-2">
-          <span
-            className="inline-block w-5 flex-shrink-0"
-            style={{
-              height: 0,
-              borderTop: "1px dashed #fbbf24",
-            }}
-          />
-          <span className="text-xs text-gray-600">Census tract</span>
-        </div>
-      )}
+      {/* Census tract & block group borders — auto-visible by zoom */}
+      <div className="flex items-center gap-2">
+        <span
+          className="inline-block w-5 flex-shrink-0"
+          style={{ height: 0, borderTop: "1px dashed #fbbf24" }}
+        />
+        <span className="text-xs text-gray-600">Census tract (z≥11.5)</span>
+      </div>
+      <div className="flex items-center gap-2">
+        <span
+          className="inline-block w-5 flex-shrink-0"
+          style={{ height: 0, borderTop: "1px solid #999" }}
+        />
+        <span className="text-xs text-gray-600">Block group (z≥13)</span>
+      </div>
 
       {/* County border — always visible */}
       <div className="flex items-center gap-2">
@@ -213,14 +216,15 @@ function DataSources({
 
       <section>
         <p className="font-medium text-gray-700">Census Data</p>
-        <p>Source: ACS 5-Year Estimates (2022), block group level.</p>
+        <p>Source: ACS 5-Year Estimates, block group level.</p>
         <p>Coverage: 24 tracts, 74 block groups.</p>
         <p>Variables:</p>
         <ul className="ml-2 space-y-0.5">
-          <li>B01003: Total population</li>
-          <li>B19025/B11001: Mean household income</li>
-          <li>B19013: Median household income</li>
-          <li>B19301: Per capita income</li>
+          <li>B01003: Total population (2022)</li>
+          <li>B19025/B11001: Mean household income (2022)</li>
+          <li>B19013: Median household income (2022)</li>
+          <li>B19301: Per capita income (2022)</li>
+          <li>B01001: Sex by age, township level (2024)</li>
         </ul>
       </section>
 

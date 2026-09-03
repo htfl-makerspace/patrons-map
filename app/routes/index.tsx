@@ -6,6 +6,7 @@ import TimeFilter from "~/components/time-filter"
 import MapControls from "~/components/map-controls"
 import InfoPanel from "~/components/info-panel"
 import { AppHeader } from "~/components/app-header"
+import AgeComparisonChart from "~/components/age-comparison-chart"
 
 export const Route = createFileRoute("/")({
   component: Home,
@@ -21,7 +22,6 @@ function Home() {
   >({
     dots: true,
     "pie-charts": false,
-    "tract-borders": true,
     "township-borders": true,
   })
 
@@ -61,14 +61,17 @@ function Home() {
 
       {/* Map controls row — fills remaining height, left & right sidebars */}
       <div className="flex-1 min-h-0 z-10 flex justify-between p-3 pt-0 pointer-events-none">
-        {/* Left side: info panel + time slider */}
-        <div className="flex flex-col gap-3 w-[320px]">
+        {/* Left side: info panel + age chart + time slider */}
+        <div className="flex flex-col gap-3 w-[320px] min-h-0">
           <InfoPanel
             patronFeatures={patronFeatures}
             layerVisibility={{ ...layerVisibility, choropleth: choroplethMetric !== "none" }}
             choroplethMetric={choroplethMetric}
             dotColorMode={dotColorMode}
           />
+          {layerVisibility["pie-charts"] && (
+            <AgeComparisonChart patronFeatures={patronFeatures} />
+          )}
           <TimeFilter map={map} disabled={!layerVisibility.dots} />
         </div>
 

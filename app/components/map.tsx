@@ -3,6 +3,10 @@ import maplibregl from "maplibre-gl"
 import "maplibre-gl/dist/maplibre-gl.css"
 import { supabase } from "~/lib/supabase"
 import booleanPointInPolygon from "@turf/boolean-point-in-polygon"
+import centroid from "@turf/centroid"
+import bbox from "@turf/bbox"
+import intersect from "@turf/intersect"
+import { polygon as turfPolygon, featureCollection } from "@turf/helpers"
 
 const MAPTILER_KEY = import.meta.env.VITE_MAPTILER_API_KEY
 const STYLE_URL = `https://api.maptiler.com/maps/019fd78b-3953-7f1b-b928-526772f25070/style.json?key=${MAPTILER_KEY}`
@@ -17,6 +21,99 @@ const COLORS = {
   dots: "#f00068", // teal — patron dots
   tracts: "#fbbf24", // amber light — census tract lines
 } as const
+
+// --- Age distribution colors and utilities ---
+import { AGE_GROUP_KEYS, AGE_GROUP_LABELS, AGE_GROUP_COLORS } from "./census-age-data"
+import type { AgeGroupKey } from "./census-age-data"
+
+const UNKNOWN_COLOR = "#d1d5db"
+
+type AgeCounts = Record<AgeGroupKey | "unknown", number>
+
+function emptyAgeCounts(): AgeCounts {
+  return { "0-9": 0, "10-17": 0, "18-34": 0, "35-64": 0, "65+": 0, unknown: 0 }
+}
+
+function ageCountsTotal(counts: AgeCounts): number {
+  return Object.values(counts).reduce((a, b) => a + b, 0)
+}
+
+function piePopupHtml(counts: AgeCounts, label: string): string {
+  const total = ageCountsTotal(counts)
+  const pct = (n: number) => total > 0 ? ((n / total) * 100).toFixed(1) : "0"
+  let rows = ""
+  for (const key of AGE_GROUP_KEYS) {
+    rows += `<div><span style="color:${AGE_GROUP_COLORS[key]}">&#9679;</span> ${AGE_GROUP_LABELS[key]}: ${counts[key].toLocaleString()} (${pct(counts[key])}%)</div>`
+  }
+  if (counts.unknown > 0) {
+    rows += `<div><span style="color:${UNKNOWN_COLOR}">&#9679;</span> Unknown: ${counts.unknown.toLocaleString()} (${pct(counts.unknown)}%)</div>`
+  }
+  return `<div style="font-size:12px;line-height:1.6">
+    <div style="font-weight:700;margin-bottom:2px">${label}</div>
+    <div style="margin-bottom:2px">${total.toLocaleString()} patrons</div>
+    ${rows}
+  </div>`
+}
+
+// Split a polygon into vertical sub-polygons proportional to age group sizes
+const FILL_KEYS: (keyof AgeCounts)[] = [...AGE_GROUP_KEYS, "unknown"]
+
+function ageGroupColor(key: string): string {
+  return AGE_GROUP_COLORS[key as AgeGroupKey] ?? UNKNOWN_COLOR
+}
+
+function splitPolygonByAge(
+  feature: GeoJSON.Feature<GeoJSON.Polygon | GeoJSON.MultiPolygon>,
+  counts: AgeCounts,
+  level: string,
+  label: string,
+): GeoJSON.Feature[] {
+  const total = ageCountsTotal(counts)
+  if (total === 0) return []
+
+  const [minX, minY, maxX, maxY] = bbox(feature)
+  const width = maxX - minX
+  const results: GeoJSON.Feature[] = []
+  let currentX = minX
+
+  for (const key of FILL_KEYS) {
+    const count = counts[key]
+    if (count === 0) continue
+    const fraction = count / total
+    const sliceMaxX = currentX + width * fraction
+
+    // Create a rectangle for this slice
+    const rect = turfPolygon([[
+      [currentX, minY],
+      [sliceMaxX, minY],
+      [sliceMaxX, maxY],
+      [currentX, maxY],
+      [currentX, minY],
+    ]])
+
+    try {
+      const clipped = intersect(featureCollection([feature as any, rect as any]))
+      if (clipped) {
+        results.push({
+          ...clipped,
+          properties: {
+            age_group: key,
+            color: ageGroupColor(key),
+            level,
+            label,
+            total,
+            ...counts,
+          },
+        })
+      }
+    } catch {
+      // Skip polygons that fail intersection (degenerate geometries)
+    }
+    currentX = sliceMaxX
+  }
+
+  return results
+}
 
 const DELAWARE_COUNTY_CENTER: [number, number] = [-75.35, 39.92]
 const HTFL_COORDS: [number, number] = [-75.30486, 39.981521]
@@ -77,21 +174,6 @@ export default function Map({ onMapReady }: MapProps) {
         data: geojsonData,
       })
 
-      // Clustered source for age-group pie charts
-      map.addSource("patrons-clustered", {
-        type: "geojson",
-        data: geojsonData,
-        cluster: true,
-        clusterRadius: 60,
-        clusterMaxZoom: 16,
-        clusterProperties: {
-          child_count: ["+", ["case", ["==", ["get", "age_group"], "child"], 1, 0]],
-          teen_count: ["+", ["case", ["==", ["get", "age_group"], "teen"], 1, 0]],
-          adult_count: ["+", ["case", ["==", ["get", "age_group"], "adult"], 1, 0]],
-          unknown_count: ["+", ["case", ["==", ["get", "age_group"], "unknown"], 1, 0]],
-        },
-      })
-
       map.addLayer({
         id: "patron-dots",
         type: "circle",
@@ -128,214 +210,6 @@ export default function Map({ onMapReady }: MapProps) {
         map.getCanvas().style.cursor = "pointer"
       })
       map.on("mouseleave", "patron-dots", () => {
-        map.getCanvas().style.cursor = ""
-      })
-
-      // --- Age-group pie chart clusters ---
-      const PIE_COLORS: Record<string, string> = {
-        child: "#8b5cf6",
-        teen: "#0d9488",
-        adult: "#e11d48",
-        unknown: "#d1d5db",
-      }
-
-      const pieImageCache: Record<string, boolean> = {}
-
-      function getPieImageId(child: number, teen: number, adult: number, unk: number, total: number): string {
-        // Quantize to nearest 5% to limit unique images
-        const cPct = Math.round((child / total) * 20) * 5
-        const tPct = Math.round((teen / total) * 20) * 5
-        const aPct = Math.round((adult / total) * 20) * 5
-        // Size bucket based on total count
-        const sizeBucket = total < 10 ? "s" : total < 50 ? "m" : total < 200 ? "l" : "xl"
-        return `pie-${cPct}-${tPct}-${aPct}-${sizeBucket}`
-      }
-
-      function getPieSize(total: number): number {
-        if (total < 10) return 28
-        if (total < 50) return 38
-        if (total < 200) return 50
-        return 64
-      }
-
-      function createPieSvg(child: number, teen: number, adult: number, unk: number, total: number): string {
-        const size = getPieSize(total)
-        const r = size / 2
-        const cx = r
-        const cy = r
-        const slices = [
-          { count: child, color: PIE_COLORS.child },
-          { count: teen, color: PIE_COLORS.teen },
-          { count: adult, color: PIE_COLORS.adult },
-          { count: unk, color: PIE_COLORS.unknown },
-        ].filter(s => s.count > 0)
-
-        if (slices.length === 0) {
-          return `<svg xmlns="http://www.w3.org/2000/svg" width="${size}" height="${size}"><circle cx="${cx}" cy="${cy}" r="${r}" fill="#d1d5db"/></svg>`
-        }
-
-        // Single slice = full circle
-        if (slices.length === 1) {
-          return `<svg xmlns="http://www.w3.org/2000/svg" width="${size}" height="${size}">` +
-            `<circle cx="${cx}" cy="${cy}" r="${r}" fill="${slices[0].color}" opacity="0.85"/>` +
-            `<circle cx="${cx}" cy="${cy}" r="${r}" fill="none" stroke="white" stroke-width="1.5"/>` +
-            `<text x="${cx}" y="${cy}" text-anchor="middle" dy="0.35em" font-family="sans-serif" font-size="${size < 32 ? 9 : 11}" font-weight="bold" fill="white">${total}</text>` +
-            `</svg>`
-        }
-
-        let startAngle = -Math.PI / 2
-        let paths = ""
-        for (const slice of slices) {
-          const angle = (slice.count / total) * 2 * Math.PI
-          const endAngle = startAngle + angle
-          const largeArc = angle > Math.PI ? 1 : 0
-          const x1 = cx + r * Math.cos(startAngle)
-          const y1 = cy + r * Math.sin(startAngle)
-          const x2 = cx + r * Math.cos(endAngle)
-          const y2 = cy + r * Math.sin(endAngle)
-          paths += `<path d="M${cx},${cy} L${x1},${y1} A${r},${r} 0 ${largeArc} 1 ${x2},${y2} Z" fill="${slice.color}" opacity="0.85"/>`
-          startAngle = endAngle
-        }
-
-        return `<svg xmlns="http://www.w3.org/2000/svg" width="${size}" height="${size}">` +
-          paths +
-          `<circle cx="${cx}" cy="${cy}" r="${r}" fill="none" stroke="white" stroke-width="1.5"/>` +
-          `<text x="${cx}" y="${cy}" text-anchor="middle" dy="0.35em" font-family="sans-serif" font-size="${size < 32 ? 9 : 11}" font-weight="bold" fill="white" stroke="#00000044" stroke-width="0.5" paint-order="stroke">${total}</text>` +
-          `</svg>`
-      }
-
-      function ensurePieImage(map: maplibregl.Map, child: number, teen: number, adult: number, unk: number, total: number): string {
-        const id = getPieImageId(child, teen, adult, unk, total)
-        if (pieImageCache[id]) return id
-
-        const svg = createPieSvg(child, teen, adult, unk, total)
-        const img = new Image()
-        const size = getPieSize(total)
-        img.width = size
-        img.height = size
-        img.onload = () => {
-          if (!map.hasImage(id)) {
-            map.addImage(id, img, { sdf: false })
-          }
-        }
-        img.src = "data:image/svg+xml;charset=utf-8," + encodeURIComponent(svg)
-        pieImageCache[id] = true
-        return id
-      }
-
-      // Cluster layer (symbol with pie chart icons)
-      map.addLayer({
-        id: "patron-clusters",
-        type: "symbol",
-        source: "patrons-clustered",
-        filter: ["has", "point_count"],
-        layout: {
-          "icon-image": ["get", "pie_image_id"],
-          "icon-size": 1,
-          "icon-allow-overlap": true,
-          visibility: "none",
-        },
-      })
-
-      // Unclustered points in pie mode (small circles matching age color)
-      map.addLayer({
-        id: "patron-unclustered",
-        type: "circle",
-        source: "patrons-clustered",
-        filter: ["!", ["has", "point_count"]],
-        paint: {
-          "circle-radius": 4,
-          "circle-color": [
-            "match", ["get", "age_group"],
-            "child", PIE_COLORS.child,
-            "teen", PIE_COLORS.teen,
-            "adult", PIE_COLORS.adult,
-            PIE_COLORS.unknown,
-          ],
-          "circle-opacity": 0.7,
-          "circle-stroke-width": 1,
-          "circle-stroke-color": "white",
-        },
-        layout: {
-          visibility: "none",
-        },
-      })
-
-      // Generate pie images when cluster data updates
-      const updatePieImages = () => {
-        if (!map.getSource("patrons-clustered")) return
-        const features = map.querySourceFeatures("patrons-clustered")
-        const clusterFeatures = features.filter(f => f.properties?.point_count)
-        if (clusterFeatures.length === 0) return
-
-        const iconExpr: any[] = ["match", ["get", "cluster_id"]]
-        const seen = new Set<number>()
-        for (const f of clusterFeatures) {
-          const clusterId = f.properties!.cluster_id as number
-          if (seen.has(clusterId)) continue
-          seen.add(clusterId)
-          const c = f.properties!.child_count ?? 0
-          const t = f.properties!.teen_count ?? 0
-          const a = f.properties!.adult_count ?? 0
-          const u = f.properties!.unknown_count ?? 0
-          const total = c + t + a + u
-          if (total === 0) continue
-          ensurePieImage(map, c, t, a, u, total)
-          iconExpr.push(clusterId, getPieImageId(c, t, a, u, total))
-        }
-        iconExpr.push("") // fallback
-
-        if (seen.size > 0 && map.getLayer("patron-clusters")) {
-          map.setLayoutProperty("patron-clusters", "icon-image", iconExpr as any)
-        }
-      }
-
-      // Update pie images on data/move events
-      map.on("data", (e) => {
-        if ((e as any).sourceId === "patrons-clustered" && (e as any).isSourceLoaded) {
-          updatePieImages()
-        }
-      })
-      map.on("moveend", () => {
-        if (map.getLayoutProperty("patron-clusters", "visibility") === "visible") {
-          updatePieImages()
-        }
-      })
-
-      // Popup on click for cluster pie charts
-      const clusterPopup = new maplibregl.Popup({
-        closeButton: true,
-        closeOnClick: true,
-        maxWidth: "200px",
-      })
-
-      map.on("click", "patron-clusters", (e) => {
-        if (!e.features?.length) return
-        const props = e.features[0].properties
-        if (!props) return
-        const child = props.child_count ?? 0
-        const teen = props.teen_count ?? 0
-        const adult = props.adult_count ?? 0
-        const unknown = props.unknown_count ?? 0
-        const total = child + teen + adult + unknown
-
-        const pct = (n: number) => total > 0 ? ((n / total) * 100).toFixed(1) : "0"
-
-        const html = `<div style="font-size:12px;line-height:1.6">
-          <div style="font-weight:700;margin-bottom:2px">${total.toLocaleString()} patrons</div>
-          <div><span style="color:${PIE_COLORS.child}">&#9679;</span> Child: ${child.toLocaleString()} (${pct(child)}%)</div>
-          <div><span style="color:${PIE_COLORS.teen}">&#9679;</span> Teen: ${teen.toLocaleString()} (${pct(teen)}%)</div>
-          <div><span style="color:${PIE_COLORS.adult}">&#9679;</span> Adult: ${adult.toLocaleString()} (${pct(adult)}%)</div>
-          ${unknown > 0 ? `<div><span style="color:${PIE_COLORS.unknown}">&#9679;</span> Unknown: ${unknown.toLocaleString()} (${pct(unknown)}%)</div>` : ""}
-        </div>`
-
-        clusterPopup.setLngLat(e.lngLat).setHTML(html).addTo(map)
-      })
-
-      map.on("mouseenter", "patron-clusters", () => {
-        map.getCanvas().style.cursor = "pointer"
-      })
-      map.on("mouseleave", "patron-clusters", () => {
         map.getCanvas().style.cursor = ""
       })
 
@@ -399,6 +273,21 @@ export default function Map({ onMapReady }: MapProps) {
         "patron-dots",
       )
 
+      // Block group borders — always visible at high zoom (independent of choropleth)
+      map.addLayer(
+        {
+          id: "blockgroup-borders-auto",
+          type: "line",
+          source: "blockgroups",
+          paint: {
+            "line-color": "#999",
+            "line-width": 0.5,
+          },
+          minzoom: 13,
+        },
+        "patron-dots",
+      )
+
       // Highlight layer for selected block group (above patron-dots so it's visible)
       map.addLayer({
         id: "blockgroup-highlight",
@@ -414,57 +303,287 @@ export default function Map({ onMapReady }: MapProps) {
         },
       })
 
-      // Pre-compute patron counts per block group once both sources load
+      // Pre-compute patron counts per block group once all sources load
       const patronCountsByGeoid: Record<string, number> = {}
 
-      const computePatronCounts = () => {
-        const patronSrc = map.getSource("patrons") as
-          maplibregl.GeoJSONSource | undefined
-        const bgSrc = map.getSource("blockgroups") as
-          maplibregl.GeoJSONSource | undefined
-        if (!patronSrc || !bgSrc) return
-
-        Promise.all([patronSrc.getData(), bgSrc.getData()]).then(
-          ([patronData, bgData]) => {
-            if (!patronData || !("features" in patronData)) return
-            if (!bgData || !("features" in bgData)) return
-
-            // Count patrons per block group
-            for (const bgFeat of bgData.features) {
-              const geoid = bgFeat.properties?.GEOID
-              if (!geoid) continue
-              let count = 0
-              for (const pFeat of patronData.features) {
-                const coords = (pFeat.geometry as GeoJSON.Point).coordinates
-                if (
-                  booleanPointInPolygon(
-                    coords as [number, number],
-                    bgFeat as any,
-                  )
-                ) {
-                  count++
-                }
-              }
-              patronCountsByGeoid[geoid] = count
-              const pop = Number(bgFeat.properties?.population) || 0
-              bgFeat.properties = {
-                ...bgFeat.properties,
-                patron_count: count,
-                penetration: pop > 0 ? (count / pop) * 100 : 0,
-              }
-            }
-
-            // Update source so the choropleth reflects penetration rates
-            bgSrc.setData(bgData as GeoJSON.GeoJSON)
+      // Age-fill sources — one per geographic level, rendered as polygon fills
+      const AGE_FILL_LEVELS = ["township", "tract", "blockgroup"] as const
+      for (const level of AGE_FILL_LEVELS) {
+        map.addSource(`age-fill-${level}`, {
+          type: "geojson",
+          data: { type: "FeatureCollection", features: [] },
+        })
+        map.addLayer(
+          {
+            id: `age-fill-${level}`,
+            type: "fill",
+            source: `age-fill-${level}`,
+            paint: {
+              "fill-color": ["get", "color"],
+              "fill-opacity": 0.55,
+            },
+            layout: { visibility: "none" },
           },
+          "patron-dots",
+        )
+        map.addLayer(
+          {
+            id: `age-fill-${level}-outline`,
+            type: "line",
+            source: `age-fill-${level}`,
+            paint: {
+              "line-color": "#ffffff",
+              "line-width": 1,
+            },
+            layout: { visibility: "none" },
+          },
+          "patron-dots",
         )
       }
 
+      // Label markers for age fills (show patron count at centroid)
+      const ageFillLabels: maplibregl.Marker[] = []
+
+      const computePatronCounts = () => {
+        const patronSrc = map.getSource("patrons") as maplibregl.GeoJSONSource | undefined
+        const bgSrc = map.getSource("blockgroups") as maplibregl.GeoJSONSource | undefined
+        const tractSrc = map.getSource("tracts") as maplibregl.GeoJSONSource | undefined
+        const townshipSrc = map.getSource("townships") as maplibregl.GeoJSONSource | undefined
+        if (!patronSrc || !bgSrc || !tractSrc || !townshipSrc) return
+
+        Promise.all([
+          patronSrc.getData(),
+          bgSrc.getData(),
+          tractSrc.getData(),
+          townshipSrc.getData(),
+        ]).then(([patronData, bgData, tractData, townshipData]) => {
+          if (!patronData || !("features" in patronData)) return
+          if (!bgData || !("features" in bgData)) return
+          if (!tractData || !("features" in tractData)) return
+          if (!townshipData || !("features" in townshipData)) return
+
+          // Find Haverford Township boundary for clipping
+          const haverfordFeat = townshipData.features.find(
+            (f) => f.properties?.NAME === "Haverford township"
+          )
+
+          // --- Block group level: count patrons + age groups ---
+          const bgAgeCounts: Record<string, AgeCounts> = {}
+          for (const bgFeat of bgData.features) {
+            const geoid = bgFeat.properties?.GEOID
+            if (!geoid) continue
+
+            // Skip block groups outside Haverford Township
+            if (haverfordFeat) {
+              const c = centroid(bgFeat as any)
+              if (!booleanPointInPolygon(c.geometry.coordinates as [number, number], haverfordFeat as any)) {
+                continue
+              }
+            }
+
+            const ages = emptyAgeCounts()
+            let count = 0
+            for (const pFeat of patronData.features) {
+              const coords = (pFeat.geometry as GeoJSON.Point).coordinates
+              if (booleanPointInPolygon(coords as [number, number], bgFeat as any)) {
+                count++
+                const ag = (pFeat.properties?.age_group as string) || "unknown"
+                if (ag in ages) ages[ag as keyof AgeCounts]++
+                else ages.unknown++
+              }
+            }
+            patronCountsByGeoid[geoid] = count
+            bgAgeCounts[geoid] = ages
+            const pop = Number(bgFeat.properties?.population) || 0
+            bgFeat.properties = {
+              ...bgFeat.properties,
+              patron_count: count,
+              penetration: pop > 0 ? (count / pop) * 100 : 0,
+            }
+          }
+          bgSrc.setData(bgData as GeoJSON.GeoJSON)
+
+          // --- Tract level: aggregate block groups by tract ---
+          const tractAgeCounts: Record<string, AgeCounts> = {}
+          for (const [bgGeoid, ages] of Object.entries(bgAgeCounts)) {
+            const tractGeoid = bgGeoid.slice(0, -1)
+            if (!tractAgeCounts[tractGeoid]) {
+              tractAgeCounts[tractGeoid] = emptyAgeCounts()
+            }
+            for (const k of FILL_KEYS) {
+              tractAgeCounts[tractGeoid][k] += ages[k]
+            }
+          }
+
+          // --- Township level: only Haverford ---
+          const townshipAgeCounts: Record<string, AgeCounts> = {}
+          if (haverfordFeat) {
+            const name = haverfordFeat.properties?.NAME ?? "Haverford township"
+            const ages = emptyAgeCounts()
+            for (const pFeat of patronData.features) {
+              const coords = (pFeat.geometry as GeoJSON.Point).coordinates
+              if (booleanPointInPolygon(coords as [number, number], haverfordFeat as any)) {
+                const ag = (pFeat.properties?.age_group as string) || "unknown"
+                if (ag in ages) ages[ag as keyof AgeCounts]++
+                else ages.unknown++
+              }
+            }
+            const total = ageCountsTotal(ages)
+            if (total > 0) {
+              townshipAgeCounts[name] = ages
+            }
+          }
+
+          // --- Generate polygon sub-fills for each level ---
+          // Block group fills
+          const bgFillFeatures: GeoJSON.Feature[] = []
+          for (const bgFeat of bgData.features) {
+            const geoid = bgFeat.properties?.GEOID
+            if (!geoid || !bgAgeCounts[geoid]) continue
+            bgFillFeatures.push(
+              ...splitPolygonByAge(
+                bgFeat as GeoJSON.Feature<GeoJSON.Polygon>,
+                bgAgeCounts[geoid],
+                "blockgroup",
+                `BG ${bgFeat.properties?.bg} · Tract ${bgFeat.properties?.tract}`,
+              ),
+            )
+          }
+          const bgFillSrc = map.getSource("age-fill-blockgroup") as maplibregl.GeoJSONSource
+          bgFillSrc.setData({ type: "FeatureCollection", features: bgFillFeatures })
+
+          // Tract fills — clip tracts to Haverford Township
+          const tractFillFeatures: GeoJSON.Feature[] = []
+          for (const tractFeat of tractData.features) {
+            const tractGeoid = tractFeat.properties?.GEOID
+            if (!tractGeoid || !tractAgeCounts[tractGeoid]) continue
+
+            // Clip tract to Haverford Township boundary
+            let clippedTract = tractFeat as GeoJSON.Feature<GeoJSON.Polygon>
+            if (haverfordFeat) {
+              try {
+                const clipped = intersect(featureCollection([tractFeat as any, haverfordFeat as any]))
+                if (!clipped) continue
+                clippedTract = clipped as GeoJSON.Feature<GeoJSON.Polygon>
+                clippedTract.properties = { ...tractFeat.properties, ...clippedTract.properties }
+              } catch {
+                continue
+              }
+            }
+
+            tractFillFeatures.push(
+              ...splitPolygonByAge(
+                clippedTract,
+                tractAgeCounts[tractGeoid],
+                "tract",
+                tractFeat.properties?.NAME ?? "Census Tract",
+              ),
+            )
+          }
+          const tractFillSrc = map.getSource("age-fill-tract") as maplibregl.GeoJSONSource
+          tractFillSrc.setData({ type: "FeatureCollection", features: tractFillFeatures })
+
+          // Township fill — just Haverford
+          const townshipFillFeatures: GeoJSON.Feature[] = []
+          if (haverfordFeat && townshipAgeCounts[haverfordFeat.properties?.NAME ?? ""]) {
+            const name = haverfordFeat.properties?.NAME ?? "Haverford township"
+            townshipFillFeatures.push(
+              ...splitPolygonByAge(
+                haverfordFeat as GeoJSON.Feature<GeoJSON.Polygon>,
+                townshipAgeCounts[name],
+                "township",
+                name,
+              ),
+            )
+          }
+          const townshipFillSrc = map.getSource("age-fill-township") as maplibregl.GeoJSONSource
+          townshipFillSrc.setData({ type: "FeatureCollection", features: townshipFillFeatures })
+
+          // --- Create label markers at centroids ---
+          for (const m of ageFillLabels) m.remove()
+          ageFillLabels.length = 0
+
+          // Helper to add a label marker
+          const addLabel = (feat: GeoJSON.Feature, counts: AgeCounts, label: string, level: string) => {
+            const total = ageCountsTotal(counts)
+            if (total === 0) return
+            const center = centroid(feat as any)
+            const coords = center.geometry.coordinates as [number, number]
+            const el = document.createElement("div")
+            el.className = "age-fill-label"
+            el.dataset.pieLevel = level
+            el.style.cssText = "background:rgba(255,255,255,0.9);border-radius:4px;padding:2px 6px;font-size:11px;font-weight:700;color:#333;pointer-events:auto;cursor:pointer;box-shadow:0 1px 3px rgba(0,0,0,0.2);white-space:nowrap;"
+            el.textContent = `${total.toLocaleString()}`
+            const marker = new maplibregl.Marker({ element: el, anchor: "center" })
+              .setLngLat(coords)
+              .setPopup(new maplibregl.Popup({ maxWidth: "220px" }).setHTML(piePopupHtml(counts, label)))
+            ageFillLabels.push(marker)
+          }
+
+          // Block group labels
+          for (const bgFeat of bgData.features) {
+            const geoid = bgFeat.properties?.GEOID
+            if (!geoid || !bgAgeCounts[geoid]) continue
+            addLabel(bgFeat, bgAgeCounts[geoid], `Block Group ${bgFeat.properties?.bg} · Tract ${bgFeat.properties?.tract}`, "blockgroup")
+          }
+
+          // Tract labels
+          for (const tractFeat of tractData.features) {
+            const tractGeoid = tractFeat.properties?.GEOID
+            if (!tractGeoid || !tractAgeCounts[tractGeoid]) continue
+            addLabel(tractFeat, tractAgeCounts[tractGeoid], tractFeat.properties?.NAME ?? "Census Tract", "tract")
+          }
+
+          // Township label
+          if (haverfordFeat && townshipAgeCounts[haverfordFeat.properties?.NAME ?? ""]) {
+            const name = haverfordFeat.properties?.NAME ?? "Haverford township"
+            addLabel(haverfordFeat, townshipAgeCounts[name], name, "township")
+          }
+
+          updateAgeFillVisibility()
+        })
+      }
+
+      // Manage age-fill layer and label visibility by zoom level and toggle state
+      let pieChartsEnabled = false
+
+      const updateAgeFillVisibility = () => {
+        const zoom = map.getZoom()
+        // Determine which level is active
+        const activeLevel = zoom < 11.5 ? "township" : zoom < 13 ? "tract" : "blockgroup"
+
+        for (const level of AGE_FILL_LEVELS) {
+          const vis = pieChartsEnabled && level === activeLevel ? "visible" : "none"
+          if (map.getLayer(`age-fill-${level}`)) {
+            map.setLayoutProperty(`age-fill-${level}`, "visibility", vis)
+          }
+          if (map.getLayer(`age-fill-${level}-outline`)) {
+            map.setLayoutProperty(`age-fill-${level}-outline`, "visibility", vis)
+          }
+        }
+
+        // Labels
+        for (const marker of ageFillLabels) {
+          const el = marker.getElement()
+          const level = el.dataset.pieLevel
+          const shouldShow = pieChartsEnabled && level === activeLevel
+          const onMap = el.parentElement
+          if (shouldShow && !onMap) marker.addTo(map)
+          else if (!shouldShow && onMap) marker.remove()
+        }
+      }
+
+      map.on("zoom", updateAgeFillVisibility)
+
+      // Listen for toggle event from controls
+      map.on("pie-charts-toggle" as any, ((e: { visible: boolean }) => {
+        pieChartsEnabled = e.visible
+        updateAgeFillVisibility()
+      }) as any)
+
+      const allSourceIds = ["patrons", "blockgroups", "tracts", "townships"]
       const onSourcesReady = () => {
-        if (
-          map.isSourceLoaded("patrons") &&
-          map.isSourceLoaded("blockgroups")
-        ) {
+        if (allSourceIds.every((id) => map.isSourceLoaded(id))) {
           computePatronCounts()
           map.off("sourcedata", onSourcesReady)
         }
@@ -595,7 +714,7 @@ export default function Map({ onMapReady }: MapProps) {
             "line-width": 1,
             "line-dasharray": [2, 2],
           },
-          minzoom: 12,
+          minzoom: 11.5,
         },
         "county-borders",
       )

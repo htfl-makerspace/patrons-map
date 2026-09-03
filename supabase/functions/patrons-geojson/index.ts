@@ -84,9 +84,11 @@ Deno.serve(async (req) => {
     if (monthDiff < 0 || (monthDiff === 0 && now.getDate() < bd.getDate())) {
       age--;
     }
-    if (age <= 11) return "child";
-    if (age <= 17) return "teen";
-    return "adult";
+    if (age <= 9) return "0-9";
+    if (age <= 17) return "10-17";
+    if (age <= 34) return "18-34";
+    if (age <= 64) return "35-64";
+    return "65+";
   };
 
   const geojson = {
