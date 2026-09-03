@@ -14,6 +14,11 @@ const LAYERS: LayerToggle[] = [
     label: "Patron dots",
     layerIds: ["patron-dots"],
   },
+  // {
+  //   id: "pie-charts",
+  //   label: "Age pie charts (clustered)",
+  //   layerIds: ["patron-clusters", "patron-unclustered"],
+  // },
   {
     id: "tract-borders",
     label: "Census tract borders",

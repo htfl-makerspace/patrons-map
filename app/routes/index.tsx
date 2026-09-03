@@ -20,6 +20,7 @@ function Home() {
     Record<string, boolean>
   >({
     dots: true,
+    "pie-charts": false,
     "tract-borders": true,
     "township-borders": true,
   })

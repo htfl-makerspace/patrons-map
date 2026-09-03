@@ -77,6 +77,21 @@ export default function Map({ onMapReady }: MapProps) {
         data: geojsonData,
       })
 
+      // Clustered source for age-group pie charts
+      map.addSource("patrons-clustered", {
+        type: "geojson",
+        data: geojsonData,
+        cluster: true,
+        clusterRadius: 60,
+        clusterMaxZoom: 16,
+        clusterProperties: {
+          child_count: ["+", ["case", ["==", ["get", "age_group"], "child"], 1, 0]],
+          teen_count: ["+", ["case", ["==", ["get", "age_group"], "teen"], 1, 0]],
+          adult_count: ["+", ["case", ["==", ["get", "age_group"], "adult"], 1, 0]],
+          unknown_count: ["+", ["case", ["==", ["get", "age_group"], "unknown"], 1, 0]],
+        },
+      })
+
       map.addLayer({
         id: "patron-dots",
         type: "circle",
@@ -113,6 +128,214 @@ export default function Map({ onMapReady }: MapProps) {
         map.getCanvas().style.cursor = "pointer"
       })
       map.on("mouseleave", "patron-dots", () => {
+        map.getCanvas().style.cursor = ""
+      })
+
+      // --- Age-group pie chart clusters ---
+      const PIE_COLORS: Record<string, string> = {
+        child: "#8b5cf6",
+        teen: "#0d9488",
+        adult: "#e11d48",
+        unknown: "#d1d5db",
+      }
+
+      const pieImageCache: Record<string, boolean> = {}
+
+      function getPieImageId(child: number, teen: number, adult: number, unk: number, total: number): string {
+        // Quantize to nearest 5% to limit unique images
+        const cPct = Math.round((child / total) * 20) * 5
+        const tPct = Math.round((teen / total) * 20) * 5
+        const aPct = Math.round((adult / total) * 20) * 5
+        // Size bucket based on total count
+        const sizeBucket = total < 10 ? "s" : total < 50 ? "m" : total < 200 ? "l" : "xl"
+        return `pie-${cPct}-${tPct}-${aPct}-${sizeBucket}`
+      }
+
+      function getPieSize(total: number): number {
+        if (total < 10) return 28
+        if (total < 50) return 38
+        if (total < 200) return 50
+        return 64
+      }
+
+      function createPieSvg(child: number, teen: number, adult: number, unk: number, total: number): string {
+        const size = getPieSize(total)
+        const r = size / 2
+        const cx = r
+        const cy = r
+        const slices = [
+          { count: child, color: PIE_COLORS.child },
+          { count: teen, color: PIE_COLORS.teen },
+          { count: adult, color: PIE_COLORS.adult },
+          { count: unk, color: PIE_COLORS.unknown },
+        ].filter(s => s.count > 0)
+
+        if (slices.length === 0) {
+          return `<svg xmlns="http://www.w3.org/2000/svg" width="${size}" height="${size}"><circle cx="${cx}" cy="${cy}" r="${r}" fill="#d1d5db"/></svg>`
+        }
+
+        // Single slice = full circle
+        if (slices.length === 1) {
+          return `<svg xmlns="http://www.w3.org/2000/svg" width="${size}" height="${size}">` +
+            `<circle cx="${cx}" cy="${cy}" r="${r}" fill="${slices[0].color}" opacity="0.85"/>` +
+            `<circle cx="${cx}" cy="${cy}" r="${r}" fill="none" stroke="white" stroke-width="1.5"/>` +
+            `<text x="${cx}" y="${cy}" text-anchor="middle" dy="0.35em" font-family="sans-serif" font-size="${size < 32 ? 9 : 11}" font-weight="bold" fill="white">${total}</text>` +
+            `</svg>`
+        }
+
+        let startAngle = -Math.PI / 2
+        let paths = ""
+        for (const slice of slices) {
+          const angle = (slice.count / total) * 2 * Math.PI
+          const endAngle = startAngle + angle
+          const largeArc = angle > Math.PI ? 1 : 0
+          const x1 = cx + r * Math.cos(startAngle)
+          const y1 = cy + r * Math.sin(startAngle)
+          const x2 = cx + r * Math.cos(endAngle)
+          const y2 = cy + r * Math.sin(endAngle)
+          paths += `<path d="M${cx},${cy} L${x1},${y1} A${r},${r} 0 ${largeArc} 1 ${x2},${y2} Z" fill="${slice.color}" opacity="0.85"/>`
+          startAngle = endAngle
+        }
+
+        return `<svg xmlns="http://www.w3.org/2000/svg" width="${size}" height="${size}">` +
+          paths +
+          `<circle cx="${cx}" cy="${cy}" r="${r}" fill="none" stroke="white" stroke-width="1.5"/>` +
+          `<text x="${cx}" y="${cy}" text-anchor="middle" dy="0.35em" font-family="sans-serif" font-size="${size < 32 ? 9 : 11}" font-weight="bold" fill="white" stroke="#00000044" stroke-width="0.5" paint-order="stroke">${total}</text>` +
+          `</svg>`
+      }
+
+      function ensurePieImage(map: maplibregl.Map, child: number, teen: number, adult: number, unk: number, total: number): string {
+        const id = getPieImageId(child, teen, adult, unk, total)
+        if (pieImageCache[id]) return id
+
+        const svg = createPieSvg(child, teen, adult, unk, total)
+        const img = new Image()
+        const size = getPieSize(total)
+        img.width = size
+        img.height = size
+        img.onload = () => {
+          if (!map.hasImage(id)) {
+            map.addImage(id, img, { sdf: false })
+          }
+        }
+        img.src = "data:image/svg+xml;charset=utf-8," + encodeURIComponent(svg)
+        pieImageCache[id] = true
+        return id
+      }
+
+      // Cluster layer (symbol with pie chart icons)
+      map.addLayer({
+        id: "patron-clusters",
+        type: "symbol",
+        source: "patrons-clustered",
+        filter: ["has", "point_count"],
+        layout: {
+          "icon-image": ["get", "pie_image_id"],
+          "icon-size": 1,
+          "icon-allow-overlap": true,
+          visibility: "none",
+        },
+      })
+
+      // Unclustered points in pie mode (small circles matching age color)
+      map.addLayer({
+        id: "patron-unclustered",
+        type: "circle",
+        source: "patrons-clustered",
+        filter: ["!", ["has", "point_count"]],
+        paint: {
+          "circle-radius": 4,
+          "circle-color": [
+            "match", ["get", "age_group"],
+            "child", PIE_COLORS.child,
+            "teen", PIE_COLORS.teen,
+            "adult", PIE_COLORS.adult,
+            PIE_COLORS.unknown,
+          ],
+          "circle-opacity": 0.7,
+          "circle-stroke-width": 1,
+          "circle-stroke-color": "white",
+        },
+        layout: {
+          visibility: "none",
+        },
+      })
+
+      // Generate pie images when cluster data updates
+      const updatePieImages = () => {
+        if (!map.getSource("patrons-clustered")) return
+        const features = map.querySourceFeatures("patrons-clustered")
+        const clusterFeatures = features.filter(f => f.properties?.point_count)
+        if (clusterFeatures.length === 0) return
+
+        const iconExpr: any[] = ["match", ["get", "cluster_id"]]
+        const seen = new Set<number>()
+        for (const f of clusterFeatures) {
+          const clusterId = f.properties!.cluster_id as number
+          if (seen.has(clusterId)) continue
+          seen.add(clusterId)
+          const c = f.properties!.child_count ?? 0
+          const t = f.properties!.teen_count ?? 0
+          const a = f.properties!.adult_count ?? 0
+          const u = f.properties!.unknown_count ?? 0
+          const total = c + t + a + u
+          if (total === 0) continue
+          ensurePieImage(map, c, t, a, u, total)
+          iconExpr.push(clusterId, getPieImageId(c, t, a, u, total))
+        }
+        iconExpr.push("") // fallback
+
+        if (seen.size > 0 && map.getLayer("patron-clusters")) {
+          map.setLayoutProperty("patron-clusters", "icon-image", iconExpr as any)
+        }
+      }
+
+      // Update pie images on data/move events
+      map.on("data", (e) => {
+        if ((e as any).sourceId === "patrons-clustered" && (e as any).isSourceLoaded) {
+          updatePieImages()
+        }
+      })
+      map.on("moveend", () => {
+        if (map.getLayoutProperty("patron-clusters", "visibility") === "visible") {
+          updatePieImages()
+        }
+      })
+
+      // Popup on click for cluster pie charts
+      const clusterPopup = new maplibregl.Popup({
+        closeButton: true,
+        closeOnClick: true,
+        maxWidth: "200px",
+      })
+
+      map.on("click", "patron-clusters", (e) => {
+        if (!e.features?.length) return
+        const props = e.features[0].properties
+        if (!props) return
+        const child = props.child_count ?? 0
+        const teen = props.teen_count ?? 0
+        const adult = props.adult_count ?? 0
+        const unknown = props.unknown_count ?? 0
+        const total = child + teen + adult + unknown
+
+        const pct = (n: number) => total > 0 ? ((n / total) * 100).toFixed(1) : "0"
+
+        const html = `<div style="font-size:12px;line-height:1.6">
+          <div style="font-weight:700;margin-bottom:2px">${total.toLocaleString()} patrons</div>
+          <div><span style="color:${PIE_COLORS.child}">&#9679;</span> Child: ${child.toLocaleString()} (${pct(child)}%)</div>
+          <div><span style="color:${PIE_COLORS.teen}">&#9679;</span> Teen: ${teen.toLocaleString()} (${pct(teen)}%)</div>
+          <div><span style="color:${PIE_COLORS.adult}">&#9679;</span> Adult: ${adult.toLocaleString()} (${pct(adult)}%)</div>
+          ${unknown > 0 ? `<div><span style="color:${PIE_COLORS.unknown}">&#9679;</span> Unknown: ${unknown.toLocaleString()} (${pct(unknown)}%)</div>` : ""}
+        </div>`
+
+        clusterPopup.setLngLat(e.lngLat).setHTML(html).addTo(map)
+      })
+
+      map.on("mouseenter", "patron-clusters", () => {
+        map.getCanvas().style.cursor = "pointer"
+      })
+      map.on("mouseleave", "patron-clusters", () => {
         map.getCanvas().style.cursor = ""
       })
 
