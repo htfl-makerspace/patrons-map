@@ -12,7 +12,6 @@
     "@supabase/supabase-js": "^2.111.0",
     "@tanstack/react-router": "^1.120.7",
     "@turf/bbox": "^7.4.0",
-    "@turf/boolean-point-in-polygon": "^7.4.0",
     "@turf/centroid": "^7.4.0",
     "@turf/helpers": "^7.4.0",
     "@turf/intersect": "^7.4.0",

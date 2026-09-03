@@ -2,7 +2,6 @@ import { useRef, useEffect, useState } from "react"
 import maplibregl from "maplibre-gl"
 import "maplibre-gl/dist/maplibre-gl.css"
 import { supabase } from "~/lib/supabase"
-import booleanPointInPolygon from "@turf/boolean-point-in-polygon"
 import centroid from "@turf/centroid"
 import bbox from "@turf/bbox"
 import intersect from "@turf/intersect"
@@ -182,6 +181,29 @@ export default function Map({ onMapReady }: MapProps) {
           "circle-radius": 3,
           "circle-color": COLORS.dots,
           "circle-opacity": 0.6,
+        },
+      })
+
+      // Power user highlights layer (500+ lifetime checkouts)
+      map.addLayer({
+        id: "power-user-dots",
+        type: "circle",
+        source: "patrons",
+        filter: [">=", ["get", "tot_chkout"], 500],
+        paint: {
+          "circle-radius": [
+            "interpolate", ["linear"], ["get", "tot_chkout"],
+            500, 4,
+            2000, 7,
+            5000, 10,
+          ],
+          "circle-color": "#facc15",
+          "circle-opacity": 0.85,
+          "circle-stroke-width": 1,
+          "circle-stroke-color": "#a16207",
+        },
+        layout: {
+          visibility: "none",
         },
       })
 
@@ -367,71 +389,103 @@ export default function Map({ onMapReady }: MapProps) {
             (f) => f.properties?.NAME === "Haverford township"
           )
 
-          // --- Block group level: count patrons + age groups ---
+          // Derive export date from the data (latest created date)
+          let exportTime = 0
+          for (const f of patronData.features) {
+            const t = new Date(f.properties?.created as string ?? 0).getTime()
+            if (t > exportTime) exportTime = t
+          }
+          const exportDate = new Date(exportTime)
+          const cutoff12m = new Date(exportDate)
+          cutoff12m.setFullYear(cutoff12m.getFullYear() - 1)
+
+          // --- Single pass: group patrons by pre-assigned geoids ---
           const bgAgeCounts: Record<string, AgeCounts> = {}
+          const tractAgeCounts: Record<string, AgeCounts> = {}
+          const townshipAges = emptyAgeCounts()
+          const bgCheckouts: Record<string, number[]> = {}
+          const bgTotalCount: Record<string, number> = {}
+          const bgActiveCount: Record<string, number> = {}
+          const bgActiveZeroChk: Record<string, number> = {}
+          const bgPowerCount: Record<string, number> = {}
+
+          for (const pFeat of patronData.features) {
+            const props = pFeat.properties!
+            const bgId = props.block_group_geoid as string | undefined
+            const tractId = props.census_tract_geoid as string | undefined
+            const ag = (props.age_group as string) || "unknown"
+            const chk = (props.tot_chkout as number) ?? 0
+
+            // Classify activity status relative to export date
+            const circ = props.circ_active ? new Date(props.circ_active as string) : null
+            const activityStatus = circ
+              ? (circ >= cutoff12m ? "active" : "lapsed")
+              : "dormant"
+
+            if (bgId) {
+              bgAgeCounts[bgId] ??= emptyAgeCounts()
+              if (ag in bgAgeCounts[bgId]) bgAgeCounts[bgId][ag as keyof AgeCounts]++
+              else bgAgeCounts[bgId].unknown++
+
+              // Any patron with a block_group_geoid is inside Haverford
+              if (ag in townshipAges) townshipAges[ag as keyof AgeCounts]++
+              else townshipAges.unknown++
+
+              // Checkout values for median
+              bgCheckouts[bgId] ??= []
+              bgCheckouts[bgId].push(chk)
+
+              // Active/total counts
+              bgTotalCount[bgId] = (bgTotalCount[bgId] ?? 0) + 1
+              if (activityStatus === "active") {
+                bgActiveCount[bgId] = (bgActiveCount[bgId] ?? 0) + 1
+                if (chk === 0) bgActiveZeroChk[bgId] = (bgActiveZeroChk[bgId] ?? 0) + 1
+              }
+
+              // Power user count (500+ lifetime checkouts)
+              if (chk >= 500) bgPowerCount[bgId] = (bgPowerCount[bgId] ?? 0) + 1
+            }
+
+            if (tractId) {
+              tractAgeCounts[tractId] ??= emptyAgeCounts()
+              if (ag in tractAgeCounts[tractId]) tractAgeCounts[tractId][ag as keyof AgeCounts]++
+              else tractAgeCounts[tractId].unknown++
+            }
+          }
+
+          // Compute median helper
+          const computeMedian = (arr: number[]): number => {
+            const sorted = [...arr].sort((a, b) => a - b)
+            const mid = Math.floor(sorted.length / 2)
+            return sorted.length % 2 ? sorted[mid] : (sorted[mid - 1] + sorted[mid]) / 2
+          }
+
+          // Update block group features with patron counts + all derived stats
           for (const bgFeat of bgData.features) {
             const geoid = bgFeat.properties?.GEOID
-            if (!geoid) continue
-
-            // Skip block groups outside Haverford Township
-            if (haverfordFeat) {
-              const c = centroid(bgFeat as any)
-              if (!booleanPointInPolygon(c.geometry.coordinates as [number, number], haverfordFeat as any)) {
-                continue
-              }
-            }
-
-            const ages = emptyAgeCounts()
-            let count = 0
-            for (const pFeat of patronData.features) {
-              const coords = (pFeat.geometry as GeoJSON.Point).coordinates
-              if (booleanPointInPolygon(coords as [number, number], bgFeat as any)) {
-                count++
-                const ag = (pFeat.properties?.age_group as string) || "unknown"
-                if (ag in ages) ages[ag as keyof AgeCounts]++
-                else ages.unknown++
-              }
-            }
+            if (!geoid || !bgAgeCounts[geoid]) continue
+            const count = ageCountsTotal(bgAgeCounts[geoid])
             patronCountsByGeoid[geoid] = count
-            bgAgeCounts[geoid] = ages
             const pop = Number(bgFeat.properties?.population) || 0
+            const total = bgTotalCount[geoid] ?? 0
+            const active = bgActiveCount[geoid] ?? 0
             bgFeat.properties = {
               ...bgFeat.properties,
               patron_count: count,
               penetration: pop > 0 ? (count / pop) * 100 : 0,
+              median_checkouts: bgCheckouts[geoid]?.length ? computeMedian(bgCheckouts[geoid]) : 0,
+              active_rate: total > 0 ? (active / total) * 100 : 0,
+              non_circ_rate: active > 0 ? ((bgActiveZeroChk[geoid] ?? 0) / active) * 100 : 0,
+              power_user_pct: total > 0 ? ((bgPowerCount[geoid] ?? 0) / total) * 100 : 0,
             }
           }
           bgSrc.setData(bgData as GeoJSON.GeoJSON)
 
-          // --- Tract level: aggregate block groups by tract ---
-          const tractAgeCounts: Record<string, AgeCounts> = {}
-          for (const [bgGeoid, ages] of Object.entries(bgAgeCounts)) {
-            const tractGeoid = bgGeoid.slice(0, -1)
-            if (!tractAgeCounts[tractGeoid]) {
-              tractAgeCounts[tractGeoid] = emptyAgeCounts()
-            }
-            for (const k of FILL_KEYS) {
-              tractAgeCounts[tractGeoid][k] += ages[k]
-            }
-          }
-
-          // --- Township level: only Haverford ---
+          // Township-level age counts
           const townshipAgeCounts: Record<string, AgeCounts> = {}
-          if (haverfordFeat) {
+          if (haverfordFeat && ageCountsTotal(townshipAges) > 0) {
             const name = haverfordFeat.properties?.NAME ?? "Haverford township"
-            const ages = emptyAgeCounts()
-            for (const pFeat of patronData.features) {
-              const coords = (pFeat.geometry as GeoJSON.Point).coordinates
-              if (booleanPointInPolygon(coords as [number, number], haverfordFeat as any)) {
-                const ag = (pFeat.properties?.age_group as string) || "unknown"
-                if (ag in ages) ages[ag as keyof AgeCounts]++
-                else ages.unknown++
-              }
-            }
-            const total = ageCountsTotal(ages)
-            if (total > 0) {
-              townshipAgeCounts[name] = ages
-            }
+            townshipAgeCounts[name] = townshipAges
           }
 
           // --- Generate polygon sub-fills for each level ---
@@ -619,6 +673,11 @@ export default function Map({ onMapReady }: MapProps) {
         const penetration =
           population > 0 ? ((patronCount / population) * 100).toFixed(1) : "N/A"
 
+        const activeRate = props?.active_rate != null ? Number(props.active_rate).toFixed(1) : "N/A"
+        const medianChk = props?.median_checkouts != null ? Number(props.median_checkouts).toLocaleString() : "N/A"
+        const nonCircRate = props?.non_circ_rate != null ? Number(props.non_circ_rate).toFixed(1) : "N/A"
+        const powerPct = props?.power_user_pct != null ? Number(props.power_user_pct).toFixed(1) : "N/A"
+
         const html = `<div style="font-size:12px;line-height:1.5">
               <div style="font-weight:700;font-size:13px;margin-bottom:4px">BG ${bg} &middot; Tract ${tract}</div>
               <div>Population: <strong>${pop}</strong></div>
@@ -628,6 +687,10 @@ export default function Map({ onMapReady }: MapProps) {
               <hr style="margin:6px 0;border-color:#e5e7eb"/>
               <div>Patrons in area: <strong>${patronCount.toLocaleString()}</strong></div>
               <div>Penetration: <strong>${penetration}%</strong></div>
+              <div>Active patron rate: <strong>${activeRate}%</strong></div>
+              <div>Median checkouts: <strong>${medianChk}</strong></div>
+              <div>Non-circ. active: <strong>${nonCircRate}%</strong></div>
+              <div>Power users (500+): <strong>${powerPct}%</strong></div>
             </div>`
 
         bgPopup.setLngLat(e.lngLat).setHTML(html)

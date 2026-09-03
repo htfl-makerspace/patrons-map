@@ -49,7 +49,7 @@ Deno.serve(async (req) => {
   while (true) {
     const { data: page, error } = await supabase
       .from("patron_ha_dev")
-      .select("barcode,latitude,longitude,created,date_issued,p_type,zip,address,circ_active,birth_date,card_at,geocode_confidence")
+      .select("barcode,latitude,longitude,created,date_issued,p_type,zip,address,circ_active,birth_date,card_at,geocode_confidence,census_tract_geoid,block_group_geoid,tot_chkout,cur_chkout")
       .not("latitude", "is", null)
       .range(offset, offset + PAGE_SIZE - 1);
 
@@ -109,6 +109,10 @@ Deno.serve(async (req) => {
         age_group: computeAgeGroup(r.birth_date),
         card_at: r.card_at,
         geocode_confidence: r.geocode_confidence,
+        census_tract_geoid: r.census_tract_geoid,
+        block_group_geoid: r.block_group_geoid,
+        tot_chkout: r.tot_chkout,
+        cur_chkout: r.cur_chkout,
       },
     })),
   };
