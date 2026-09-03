@@ -15,6 +15,7 @@ function Home() {
   const [map, setMap] = useState<maplibregl.Map | null>(null)
   const [patronFeatures, setPatronFeatures] = useState<GeoJSON.Feature[]>([])
   const [choroplethMetric, setChoroplethMetric] = useState("none")
+  const [dotColorMode, setDotColorMode] = useState<"uniform" | "age_group">("uniform")
   const [layerVisibility, setLayerVisibility] = useState<
     Record<string, boolean>
   >({
@@ -65,6 +66,7 @@ function Home() {
             patronFeatures={patronFeatures}
             layerVisibility={{ ...layerVisibility, choropleth: choroplethMetric !== "none" }}
             choroplethMetric={choroplethMetric}
+            dotColorMode={dotColorMode}
           />
           <TimeFilter map={map} disabled={!layerVisibility.dots} />
         </div>
@@ -77,6 +79,8 @@ function Home() {
             onLayerVisibilityChange={handleLayerChange}
             choroplethMetric={choroplethMetric}
             onChoroplethMetricChange={setChoroplethMetric}
+            dotColorMode={dotColorMode}
+            onDotColorModeChange={setDotColorMode}
           />
         </div>
       </div>

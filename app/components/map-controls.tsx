@@ -28,13 +28,34 @@ const LAYERS: LayerToggle[] = [
 
 const CHOROPLETH_LAYER_IDS = ["blockgroup-fill", "blockgroup-borders", "blockgroup-highlight"]
 
+const AGE_GROUP_COLORS: Record<string, { label: string; color: string }> = {
+  child: { label: "Child (≤11)", color: "#8b5cf6" },
+  teen: { label: "Teen (12–17)", color: "#0d9488" },
+  adult: { label: "Adult (18+)", color: "#e11d48" },
+  unknown: { label: "Unknown", color: "#d1d5db" },
+}
+
+const UNIFORM_DOT_COLOR = "#f00068"
+
+const AGE_GROUP_PAINT_EXPR: maplibregl.ExpressionSpecification = [
+  "match", ["get", "age_group"],
+  "child", AGE_GROUP_COLORS.child.color,
+  "teen", AGE_GROUP_COLORS.teen.color,
+  "adult", AGE_GROUP_COLORS.adult.color,
+  AGE_GROUP_COLORS.unknown.color,
+]
+
 interface MapControlsProps {
   map: maplibregl.Map | null
   layerVisibility: Record<string, boolean>
   onLayerVisibilityChange: (vis: Record<string, boolean>) => void
   choroplethMetric: string
   onChoroplethMetricChange: (metric: string) => void
+  dotColorMode: "uniform" | "age_group"
+  onDotColorModeChange: (mode: "uniform" | "age_group") => void
 }
+
+export { AGE_GROUP_COLORS, UNIFORM_DOT_COLOR }
 
 export default function MapControls({
   map,
@@ -42,6 +63,8 @@ export default function MapControls({
   onLayerVisibilityChange,
   choroplethMetric,
   onChoroplethMetricChange,
+  dotColorMode,
+  onDotColorModeChange,
 }: MapControlsProps) {
   const [collapsed, setCollapsed] = useState(false)
 
@@ -85,6 +108,18 @@ export default function MapControls({
       if (map.getLayer(layerId)) {
         map.setLayoutProperty(layerId, "visibility", "visible")
       }
+    }
+  }
+
+  const selectDotColor = (mode: "uniform" | "age_group") => {
+    if (!map) return
+    onDotColorModeChange(mode)
+    if (map.getLayer("patron-dots")) {
+      map.setPaintProperty(
+        "patron-dots",
+        "circle-color",
+        mode === "age_group" ? AGE_GROUP_PAINT_EXPR : UNIFORM_DOT_COLOR,
+      )
     }
   }
 
@@ -165,6 +200,46 @@ export default function MapControls({
             <span className="text-sm text-gray-600">{metric.label}</span>
           </label>
         ))}
+      </div>
+
+      {/* Dot coloring radio group */}
+      <div className="px-4 py-2 border-t border-gray-100 space-y-1">
+        <div className="text-[11px] font-semibold text-gray-500 uppercase tracking-wide pb-0.5">
+          Dot coloring
+        </div>
+        <label className="flex items-center gap-2 py-1.5 cursor-pointer hover:bg-gray-50 rounded px-1 -mx-1">
+          <input
+            type="radio"
+            name="dotColor"
+            checked={dotColorMode === "uniform"}
+            onChange={() => selectDotColor("uniform")}
+            className="border-gray-300 text-indigo-600 focus:ring-indigo-500 h-4 w-4"
+          />
+          <span className="flex items-center gap-1.5 text-sm text-gray-600">
+            <span className="inline-block w-2.5 h-2.5 rounded-full" style={{ backgroundColor: UNIFORM_DOT_COLOR, opacity: 0.6 }} />
+            Uniform
+          </span>
+        </label>
+        <label className="flex items-center gap-2 py-1.5 cursor-pointer hover:bg-gray-50 rounded px-1 -mx-1">
+          <input
+            type="radio"
+            name="dotColor"
+            checked={dotColorMode === "age_group"}
+            onChange={() => selectDotColor("age_group")}
+            className="border-gray-300 text-indigo-600 focus:ring-indigo-500 h-4 w-4"
+          />
+          <span className="text-sm text-gray-600">By age group</span>
+        </label>
+        {dotColorMode === "age_group" && (
+          <div className="pl-7 space-y-0.5 pb-1">
+            {Object.entries(AGE_GROUP_COLORS).map(([key, { label, color }]) => (
+              <div key={key} className="flex items-center gap-1.5">
+                <span className="inline-block w-2.5 h-2.5 rounded-full" style={{ backgroundColor: color, opacity: 0.6 }} />
+                <span className="text-xs text-gray-500">{label}</span>
+              </div>
+            ))}
+          </div>
+        )}
       </div>
     </div>
   )

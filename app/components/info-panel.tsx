@@ -1,10 +1,12 @@
 import { useState, useMemo } from "react"
 import { getChoroplethMetric } from "./choropleth-config"
+import { AGE_GROUP_COLORS, UNIFORM_DOT_COLOR } from "./map-controls"
 
 interface InfoPanelProps {
   patronFeatures: GeoJSON.Feature[]
   layerVisibility: Record<string, boolean>
   choroplethMetric: string
+  dotColorMode: "uniform" | "age_group"
 }
 
 const TOTAL_PATRON_ENTRIES = 21041
@@ -18,9 +20,11 @@ const CONFIDENCE_GROUPS: { label: string; levels: string[]; color: string }[] = 
 function Legend({
   layerVisibility,
   choroplethMetric,
+  dotColorMode,
 }: {
   layerVisibility: Record<string, boolean>
   choroplethMetric: string
+  dotColorMode: "uniform" | "age_group"
 }) {
   const hasAny =
     layerVisibility.dots ||
@@ -37,13 +41,26 @@ function Legend({
       </h3>
 
       {/* Patron dots */}
-      {layerVisibility.dots && (
+      {layerVisibility.dots && dotColorMode === "uniform" && (
         <div className="flex items-center gap-2">
           <span
             className="inline-block w-3 h-3 rounded-full flex-shrink-0"
-            style={{ backgroundColor: "#f00068", opacity: 0.6 }}
+            style={{ backgroundColor: UNIFORM_DOT_COLOR, opacity: 0.6 }}
           />
           <span className="text-xs text-gray-600">Library patron</span>
+        </div>
+      )}
+      {layerVisibility.dots && dotColorMode === "age_group" && (
+        <div className="space-y-1">
+          {Object.entries(AGE_GROUP_COLORS).map(([key, { label, color }]) => (
+            <div key={key} className="flex items-center gap-2">
+              <span
+                className="inline-block w-3 h-3 rounded-full flex-shrink-0"
+                style={{ backgroundColor: color, opacity: 0.6 }}
+              />
+              <span className="text-xs text-gray-600">{label}</span>
+            </div>
+          ))}
         </div>
       )}
 
@@ -249,6 +266,7 @@ export default function InfoPanel({
   patronFeatures,
   layerVisibility,
   choroplethMetric,
+  dotColorMode,
 }: InfoPanelProps) {
   const [collapsed, setCollapsed] = useState(false)
   const [sourcesExpanded, setSourcesExpanded] = useState(false)
@@ -315,7 +333,7 @@ export default function InfoPanel({
       </div>
 
       {/* Legend — always fully visible */}
-      <Legend layerVisibility={layerVisibility} choroplethMetric={choroplethMetric} />
+      <Legend layerVisibility={layerVisibility} choroplethMetric={choroplethMetric} dotColorMode={dotColorMode} />
 
       {/* Data Sources — inline text, truncated with "more" / "less" */}
       <div

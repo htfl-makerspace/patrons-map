@@ -73,6 +73,22 @@ Deno.serve(async (req) => {
     });
   }
 
+  const now = new Date();
+
+  const computeAgeGroup = (birthDate: unknown): string => {
+    if (!birthDate || typeof birthDate !== "string") return "unknown";
+    const bd = new Date(birthDate);
+    if (isNaN(bd.getTime())) return "unknown";
+    let age = now.getFullYear() - bd.getFullYear();
+    const monthDiff = now.getMonth() - bd.getMonth();
+    if (monthDiff < 0 || (monthDiff === 0 && now.getDate() < bd.getDate())) {
+      age--;
+    }
+    if (age <= 11) return "child";
+    if (age <= 17) return "teen";
+    return "adult";
+  };
+
   const geojson = {
     type: "FeatureCollection",
     features: data.map((r: Record<string, unknown>) => ({
@@ -88,7 +104,7 @@ Deno.serve(async (req) => {
         zip: r.zip,
         address: r.address,
         circ_active: r.circ_active,
-        birth_date: r.birth_date,
+        age_group: computeAgeGroup(r.birth_date),
         card_at: r.card_at,
         geocode_confidence: r.geocode_confidence,
       },
