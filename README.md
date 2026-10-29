@@ -325,6 +325,35 @@ ALTER TABLE patron_ha ADD COLUMN IF NOT EXISTS geocode_accuracy text;
 ALTER TABLE patron_ha ADD COLUMN IF NOT EXISTS geocode_confidence text;
 ```
 
+### Access control
+
+Migrations in `supabase/migrations/` (applied with `supabase db query --linked -f <file>`) lock the database down:
+
+- Every table in `public` has RLS enabled with a single read-only policy for signed-in users; `anon` has no table access. The edge function and Python scripts use the service role key, which bypasses both.
+- PostGIS lives in the `extensions` schema (not `public`), so `spatial_ref_sys` and friends don't trigger the "RLS disabled" advisor warning.
+- `public.keepalive()` is the only thing `anon` can call (used by the Railway keep-alive cron).
+- Email signup is disabled in the dashboard; accounts are created by an admin.
+
+Never commit patron exports — `*.csv` is gitignored for that reason.
+
+## Supabase Keep-Alive (Railway Cron)
+
+Supabase pauses free-tier projects after 7 days of inactivity. `keepalive/` is a dependency-free Node script that Railway runs as a cron job every 3 days (`0 12 */3 * *`, UTC). It calls the `public.keepalive()` Postgres function (defined in `supabase/migrations/`), so the request actually reaches Postgres without touching patron data.
+
+Railway setup:
+1. New service → deploy from this GitHub repo
+2. Settings → Root Directory: `keepalive` (picks up `keepalive/railway.json` for the start command and cron schedule)
+3. Variables: `SUPABASE_URL`, `SUPABASE_PUBLISHABLE_KEY`
+
+A failed ping exits non-zero, so it shows up as a failed run in Railway.
+
+Test it locally:
+```bash
+cd keepalive
+set -a; source ../app/.env; set +a
+node index.mjs
+```
+
 ## Environment Variables
 
 Stored in `app/.env` (gitignored):
