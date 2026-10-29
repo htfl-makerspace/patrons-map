@@ -121,7 +121,7 @@ Deno.serve(async (req) => {
     headers: {
       ...corsHeaders,
       "Content-Type": "application/geo+json",
-      "Cache-Control": "public, max-age=3600, s-maxage=3600",
+      "Cache-Control": "private, max-age=3600",
     },
   });
 });

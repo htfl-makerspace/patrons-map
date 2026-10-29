@@ -10,3 +10,6 @@ supabase/.temp/
 app/scripts/requests/
 app/scripts/results/
 jupyter/
+
+# Patron records (PII) - never commit
+*.csv
