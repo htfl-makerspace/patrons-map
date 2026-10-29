@@ -1,4 +1,4 @@
-import { createFileRoute, Link, useNavigate } from "@tanstack/react-router"
+import { createFileRoute, useNavigate } from "@tanstack/react-router"
 import { useState } from "react"
 import { authLinkError, supabase } from "~/lib/supabase"
 import { useAuth } from "~/hooks/useAuth"
@@ -45,8 +45,7 @@ function LoginPage() {
       <form onSubmit={handleSubmit} className="grid gap-4">
         {authLinkError && !error && (
           <p className="text-sm text-destructive">
-            {authLinkError}. Ask for a new invite, or use “Forgot password?”
-            below.
+            {authLinkError}. Ask an admin to send you a new link.
           </p>
         )}
         <div className="grid gap-2">
@@ -63,16 +62,9 @@ function LoginPage() {
           />
         </div>
         <div className="grid gap-2">
-          <div className="flex items-center justify-between">
-            <label htmlFor="password" className="text-sm font-medium">
-              Password
-            </label>
-            <Link
-              to="/forgot-password"
-              className="text-sm text-muted-foreground underline-offset-4 hover:underline">
-              Forgot password?
-            </Link>
-          </div>
+          <label htmlFor="password" className="text-sm font-medium">
+            Password
+          </label>
           <input
             id="password"
             type="password"

@@ -12,8 +12,9 @@ export const Route = createFileRoute("/set-password")({
 })
 
 /**
- * Reached after accepting an invite or opening a password-reset link (both
- * sign the user in), or directly by a signed-in user changing their password.
+ * Reached after accepting an invite or a password-reset link sent from the
+ * Supabase dashboard (both sign the user in), or directly by a signed-in user
+ * changing their password.
  */
 function SetPasswordPage() {
   const navigate = useNavigate()

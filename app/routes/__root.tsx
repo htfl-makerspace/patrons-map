@@ -11,10 +11,8 @@ export const Route = createRootRoute({
   component: RootComponent,
 })
 
-// Pages reachable without a session
-const PUBLIC_PATHS = ["/login", "/forgot-password"]
 // Pages rendered full-screen on the auth background instead of the map shell
-const AUTH_PATHS = [...PUBLIC_PATHS, "/set-password"]
+const AUTH_PATHS = ["/login", "/set-password"]
 
 function RootComponent() {
   const { session, loading } = useAuth()
@@ -29,7 +27,7 @@ function RootComponent() {
     )
   }
 
-  if (!session && !PUBLIC_PATHS.includes(pathname)) {
+  if (!session && pathname !== "/login") {
     navigate({ to: "/login", replace: true })
     return null
   }
