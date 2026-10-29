@@ -41,8 +41,18 @@ function LoginPage() {
   }
 
   return (
-    <div className="flex min-h-screen items-center justify-center p-4">
-      <Card className="w-full max-w-sm">
+    <div className="relative flex min-h-screen items-center justify-center overflow-hidden p-4">
+      {/* Full-page library photo, blurred; scaled up so the blur doesn't fade the edges */}
+      <div
+        aria-hidden
+        className="absolute inset-0 scale-110 bg-cover bg-center blur-sm"
+        style={{
+          backgroundImage: `url(${import.meta.env.BASE_URL}login-bg.jpg)`,
+        }}
+      />
+      <div aria-hidden className="absolute inset-0 bg-black/20" />
+
+      <Card className="relative w-full max-w-sm shadow-xl">
         <CardHeader>
           <CardTitle className="text-2xl">Sign in</CardTitle>
         </CardHeader>
