@@ -1,9 +1,9 @@
-import { createFileRoute, useNavigate } from "@tanstack/react-router"
+import { createFileRoute, Link, useNavigate } from "@tanstack/react-router"
 import { useState } from "react"
-import { supabase } from "~/lib/supabase"
+import { authLinkError, supabase } from "~/lib/supabase"
 import { useAuth } from "~/hooks/useAuth"
 import { Button } from "~/ui/button"
-import { Card, CardContent, CardHeader, CardTitle } from "~/ui/card"
+import { AuthLayout, authInputClass } from "~/components/auth-layout"
 
 export const Route = createFileRoute("/login")({
   component: LoginPage,
@@ -41,56 +41,52 @@ function LoginPage() {
   }
 
   return (
-    <div className="relative flex min-h-screen items-center justify-center overflow-hidden p-4">
-      {/* Full-page library photo, blurred; scaled up so the blur doesn't fade the edges */}
-      <div
-        aria-hidden
-        className="absolute inset-0 scale-110 bg-cover bg-center blur-sm"
-        style={{
-          backgroundImage: `url(${import.meta.env.BASE_URL}login-bg.jpg)`,
-        }}
-      />
-      <div aria-hidden className="absolute inset-0 bg-black/20" />
-
-      <Card className="relative w-full max-w-sm shadow-xl">
-        <CardHeader>
-          <CardTitle className="text-2xl">Sign in</CardTitle>
-        </CardHeader>
-        <CardContent>
-          <form onSubmit={handleSubmit} className="grid gap-4">
-            <div className="grid gap-2">
-              <label htmlFor="email" className="text-sm font-medium">
-                Email
-              </label>
-              <input
-                id="email"
-                type="email"
-                required
-                value={email}
-                onChange={(e) => setEmail(e.target.value)}
-                className="h-9 rounded-md border bg-transparent px-3 text-sm shadow-xs outline-none focus:ring-2 focus:ring-ring"
-              />
-            </div>
-            <div className="grid gap-2">
-              <label htmlFor="password" className="text-sm font-medium">
-                Password
-              </label>
-              <input
-                id="password"
-                type="password"
-                required
-                value={password}
-                onChange={(e) => setPassword(e.target.value)}
-                className="h-9 rounded-md border bg-transparent px-3 text-sm shadow-xs outline-none focus:ring-2 focus:ring-ring"
-              />
-            </div>
-            {error && <p className="text-sm text-destructive">{error}</p>}
-            <Button type="submit" disabled={submitting}>
-              {submitting ? "Signing in…" : "Sign in"}
-            </Button>
-          </form>
-        </CardContent>
-      </Card>
-    </div>
+    <AuthLayout title="Sign in">
+      <form onSubmit={handleSubmit} className="grid gap-4">
+        {authLinkError && !error && (
+          <p className="text-sm text-destructive">
+            {authLinkError}. Ask for a new invite, or use “Forgot password?”
+            below.
+          </p>
+        )}
+        <div className="grid gap-2">
+          <label htmlFor="email" className="text-sm font-medium">
+            Email
+          </label>
+          <input
+            id="email"
+            type="email"
+            required
+            value={email}
+            onChange={(e) => setEmail(e.target.value)}
+            className={authInputClass}
+          />
+        </div>
+        <div className="grid gap-2">
+          <div className="flex items-center justify-between">
+            <label htmlFor="password" className="text-sm font-medium">
+              Password
+            </label>
+            <Link
+              to="/forgot-password"
+              className="text-sm text-muted-foreground underline-offset-4 hover:underline">
+              Forgot password?
+            </Link>
+          </div>
+          <input
+            id="password"
+            type="password"
+            required
+            value={password}
+            onChange={(e) => setPassword(e.target.value)}
+            className={authInputClass}
+          />
+        </div>
+        {error && <p className="text-sm text-destructive">{error}</p>}
+        <Button type="submit" disabled={submitting}>
+          {submitting ? "Signing in…" : "Sign in"}
+        </Button>
+      </form>
+    </AuthLayout>
   )
 }
