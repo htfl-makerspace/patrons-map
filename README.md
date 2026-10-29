@@ -338,12 +338,20 @@ Never commit patron exports — `*.csv` is gitignored for that reason.
 
 ## Supabase Keep-Alive (Railway Cron)
 
-Supabase pauses free-tier projects after 7 days of inactivity. `keepalive/` is a dependency-free Node script that Railway runs as a cron job every 3 days (`0 12 */3 * *`, UTC). It calls the `public.keepalive()` Postgres function (defined in `supabase/migrations/`), so the request actually reaches Postgres without touching patron data.
+Supabase pauses free-tier projects after 7 days of inactivity. `keepalive/` is a dependency-free Node script that calls the `public.keepalive()` Postgres function (defined in `supabase/migrations/`), so the request actually reaches Postgres without touching patron data.
 
-Railway setup:
-1. New service → deploy from this GitHub repo
-2. Settings → Root Directory: `keepalive` (picks up `keepalive/railway.json` for the start command and cron schedule)
-3. Variables: `SUPABASE_URL`, `SUPABASE_PUBLISHABLE_KEY`
+It runs on Railway as project `htfl-supabase-keepalive`, service `supabase-keepalive` (workspace "Duc Dam's Projects"). It's deployed from this folder with the Railway CLI, not linked to GitHub, so changes to `keepalive/` need a manual redeploy:
+
+```bash
+cd keepalive
+railway link        # first time on a new machine: pick htfl-supabase-keepalive
+railway up --service supabase-keepalive
+```
+
+Service settings (set on the service, not in a config file — Railway's IaC doesn't support cron yet):
+- Cron schedule: `0 12 */3 * *` (12:00 UTC, every 3rd day of the month)
+- Start command: `node index.mjs`, restart policy: never
+- Variables: `SUPABASE_URL`, `SUPABASE_PUBLISHABLE_KEY`
 
 A failed ping exits non-zero, so it shows up as a failed run in Railway.
 
