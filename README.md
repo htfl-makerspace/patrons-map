@@ -333,6 +333,7 @@ Migrations in `supabase/migrations/` (applied with `supabase db query --linked -
 - PostGIS lives in the `extensions` schema (not `public`), so `spatial_ref_sys` and friends don't trigger the "RLS disabled" advisor warning.
 - `public.keepalive()` is the only thing `anon` can call (used by the Railway keep-alive cron).
 - Email signup is disabled in the dashboard; accounts are created by an admin.
+- New users are invited from the dashboard (Authentication → Users → Invite). The invite link signs them in and the app sends them to `/set-password`. To reset someone's password, use "Send password recovery" on their user in the dashboard; that link lands on the same page. Auth → URL Configuration must have Site URL `https://htfl-makerspace.github.io/patrons-map/` (and `http://localhost:5173/patrons-map/**` in Redirect URLs for local dev), or email links go to localhost.
 
 Never commit patron exports — `*.csv` is gitignored for that reason.
 
